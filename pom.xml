@@ -34,8 +34,8 @@
     </developers>
 
     <scm>
-        <url>https://github.com/network-analytics/yang-schema-registry</url>
-        <connection>git@github.com:network-analytics/yang-schema-registry.git</connection>
+        <url>https://github.com/network-analytics/yang-kafka-integration</url>
+        <connection>git@github.com:network-analytics/yang-kafka-integration.git</connection>
     </scm>
 
     <licenses>
@@ -71,6 +71,7 @@
             <url>https://jitpack.io</url>
         </repository>
     </repositories>
+
     <build>
         <pluginManagement>
             <plugins>
@@ -148,4 +149,16 @@
         </plugins>
     </build>
 
+    <distributionManagement>
+        <repository>
+            <id>ossrh</id>
+            <name>Central Repository OSSRH</name>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/network-analytics/</url>
+        </snapshotRepository>
+    </distributionManagement>
 </project>
