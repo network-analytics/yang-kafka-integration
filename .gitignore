@@ -137,7 +137,7 @@ fabric.properties
 
 .idea/*
 
-!.idea/codeStyles
+.idea/codeStyles
 !.idea/runConfigurations
 
 ### Java ###

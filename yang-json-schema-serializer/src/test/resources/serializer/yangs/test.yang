@@ -1,0 +1,22 @@
+module insa-test {
+    yang-version 1.1;
+    namespace "urn:ietf:params:xml:ns:yang:insa-test";
+    prefix it;
+
+    organization "INSA LYON";
+    contact
+        "Authors:  Vivekananda Boudia
+        <mailto:vivekananda.boudia@insa-lyon.fr>";
+
+    description
+        "Yang module used for unit test";
+
+    revision 2024-09-02 {
+        description "Initial version.";
+    }
+
+    container insa-container {
+        config false;
+        anydata d;
+    }
+}
