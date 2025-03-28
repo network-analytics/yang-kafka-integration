@@ -1,0 +1,11 @@
+{
+  "data": {
+    "insa-test-base:insa-container": {
+      "base": true,
+      "augments1": {
+        "data1": true,
+        "data2": true
+      }
+    }
+  }
+}

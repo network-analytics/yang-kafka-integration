@@ -1,0 +1,42 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>ch.swisscom</groupId>
+        <artifactId>yang-kafka-integration</artifactId>
+        <version>0.1</version>
+    </parent>
+
+    <artifactId>kafka-streams-yang-json-schema-serde</artifactId>
+    <version>0.1</version>
+    <packaging>jar</packaging>
+
+    <name>kafka-streams-yang-json-schema-serde</name>
+    <description>Yang JSON Serde for Schema Registry Plugin for Confluent's schema registry</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>ch.swisscom</groupId>
+            <artifactId>yang-json-schema-serializer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-schema-registry-client</artifactId>
+            <version>${confluent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
+            <version>${kafka.streams.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -31,6 +31,17 @@
                 <role>developer</role>
             </roles>
         </developer>
+        <developer>
+            <id>ahuangfeng</id>
+            <name>Alex Huang Feng</name>
+            <email>alexhuang05@gmail.com</email>
+            <url>https://github.com/ahuangfeng</url>
+            <organization>INSA Lyon</organization>
+            <organizationUrl>https://www.insa-lyon.fr</organizationUrl>
+            <roles>
+                <role>developer</role>
+            </roles>
+        </developer>
     </developers>
 
     <scm>
@@ -51,13 +62,17 @@
         <yangkit.version>1.4.5</yangkit.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
         <spotless.version>2.43.0</spotless.version>
-        <confluent.version>7.5.7</confluent.version>
+        <confluent.version>7.5.1</confluent.version>
         <junit.version>4.13.2</junit.version>
         <kafka.scala.version>2.13</kafka.scala.version>
+        <kafka.version>7.5.1-ccs</kafka.version>
+        <kafka.streams.version>3.8.0</kafka.streams.version>
     </properties>
 
     <modules>
         <module>yang-schema-registry-plugin</module>
+        <module>yang-json-schema-serializer</module>
+        <module>yang-json-schema-serde</module>
     </modules>
 
     <repositories>

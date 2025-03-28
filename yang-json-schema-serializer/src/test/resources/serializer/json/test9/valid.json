@@ -1,0 +1,8 @@
+{
+  "data": {
+    "insa-test-simple-remote:insa-container": {
+      "simple": true,
+      "complex": true
+    }
+  }
+}
