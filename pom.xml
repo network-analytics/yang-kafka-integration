@@ -42,6 +42,17 @@
                 <role>developer</role>
             </roles>
         </developer>
+        <developer>
+            <id>BVivek974</id>
+            <name>Vivek Boudia</name>
+            <email>vivekananda.boudia@insa-lyon.fr</email>
+            <url>https://github.com/BVivek974</url>
+            <organization>INSA Lyon</organization>
+            <organizationUrl>https://www.insa-lyon.fr</organizationUrl>
+            <roles>
+                <role>developer</role>
+            </roles>
+        </developer>
     </developers>
 
     <scm>
@@ -67,12 +78,15 @@
         <kafka.scala.version>2.13</kafka.scala.version>
         <kafka.version>7.5.1-ccs</kafka.version>
         <kafka.streams.version>3.8.0</kafka.streams.version>
+        <jackson.cbor.version>2.14.2</jackson.cbor.version>
     </properties>
 
     <modules>
         <module>yang-schema-registry-plugin</module>
         <module>yang-json-schema-serializer</module>
         <module>yang-json-schema-serde</module>
+        <module>yang-cbor-schema-serializer</module>
+        <module>yang-cbor-schema-serde</module>
     </modules>
 
     <repositories>
