@@ -7,12 +7,12 @@
         <artifactId>yang-kafka-integration</artifactId>
         <version>0.1</version>
     </parent>
-    <artifactId>kafka-yang-json-schema-serializer</artifactId>
+    <artifactId>kafka-yang-cbor-schema-serializer</artifactId>
     <version>0.1</version>
     <packaging>jar</packaging>
 
-    <name>kafka-yang-json-schema-serializer</name>
-    <description>Yang JSON SerDe Schema Registry Plugin for Confluent's schema registry</description>
+    <name>kafka-yang-cbor-schema-serializer</name>
+    <description>Yang CBOR SerDe Schema Registry Plugin for Confluent's schema registry</description>
 
     <licenses>
         <license>
@@ -46,11 +46,16 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-cbor</artifactId>
+            <version>${jackson.cbor.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 </project>
