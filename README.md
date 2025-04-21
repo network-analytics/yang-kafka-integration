@@ -3,8 +3,15 @@
 This repo provides components needed for native YANG in apache Kafka. Currently, includes the following components:
 
 1. yang-schema-registry-plugin: A plugin for Confluent's schema register
-2. TODO json and cbor serdes
+2. yang-json-schema-serializer: Serializers and Deserializers for YANG-JSON
+3. yang-cbor-schema-serializer: Serializers and Deserializers for YANG-CBOR 
 
+## Dependencies
+- YangKit [[Repository (branch feature/yangkit-complete-validation)]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
+
+## Compiling
+1. Compile YangKit from branch [[feature/yangkit-complete-validation]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
+2. `maven clean install`
 
 ## Configuring yang-schema-registry-plugin
 
