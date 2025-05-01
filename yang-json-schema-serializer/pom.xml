@@ -5,10 +5,10 @@
     <parent>
         <groupId>ch.swisscom</groupId>
         <artifactId>yang-kafka-integration</artifactId>
-        <version>0.1</version>
+        <version>0.2</version>
     </parent>
     <artifactId>kafka-yang-json-schema-serializer</artifactId>
-    <version>0.1</version>
+    <version>0.2</version>
     <packaging>jar</packaging>
 
     <name>kafka-yang-json-schema-serializer</name>
@@ -22,6 +22,95 @@
         </license>
     </licenses>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/*.MF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>io.github.yang-central.yangkit:yang-compiler</artifact>
+                                    <excludes>
+                                        <exclude>plugins.json</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                            </transformers>
+                            <artifactSet>
+                                <excludes>
+                                    <!-- Exclude packages that are already included in the schema registry -->
+                                    <!-- Exclude common dependencies with Confluent's schema-registry-->
+                                    <exclude>io.confluent:*</exclude>
+                                    <exclude>com.fasterxml.jackson.core:*</exclude>
+                                    <exclude>com.google.code.gson:*</exclude>
+                                    <exclude>com.google.guava:*</exclude>
+                                    <exclude>com.github.luben:*</exclude>
+                                    <exclude>io.swagger:*</exclude>
+                                    <exclude>org.slf4j:*</exclude>
+                                    <exclude>org.yaml:*</exclude>
+                                    <exclude>org.apache.kafka:*</exclude>
+                                    <exclude>org.xerial.snappy:*</exclude>
+                                    <exclude>org.lz4:*</exclude>
+                                    <exclude>com.google.errorprone:*</exclude>
+                                    <exclude>com.google.j2objc:*</exclude>
+                                    <exclude>org.checkerframework:*</exclude>
+                                    <exclude>ch.qos.reload4j:*</exclude>
+                                    <exclude>com.google.code.findbugs:jsr305</exclude>
+                                    <exclude>org.apache.commons:commons-collections4</exclude>
+                                    <exclude>org.apache.commons:commons-compress</exclude>
+                                    <exclude>org.apache.commons:commons-lang3</exclude>
+                                    <exclude>junit:*</exclude>
+                                    <exclude>org.junit.jupiter:*</exclude>
+                                    <exclude>org.junit.platform:*</exclude>
+                                    <exclude>org.apache.avro:*</exclude>
+                                    <exclude>org.apache.logging.log4j:*</exclude>
+                                </excludes>
+                            </artifactSet>
+                            <relocations>
+                                <relocation>
+                                    <pattern>io.github.yang-central.yangkit</pattern>
+                                    <shadedPattern>shaded.io.github.yang-central.yangkit</shadedPattern>
+                                </relocation>
+                            </relocations>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
     <dependencies>
         <dependency>

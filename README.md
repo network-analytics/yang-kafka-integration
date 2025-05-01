@@ -9,8 +9,8 @@ This repo provides components needed for native YANG in apache Kafka. Currently,
 ## Dependencies
 - YangKit [[Repository (branch feature/yangkit-complete-validation)]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
 
-## Compiling
-1. Compile YangKit from branch [[feature/yangkit-complete-validation]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
+## Compiling from source
+1. Compile YangKit fork from branch [[feature/yangkit-complete-validation]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
 2. `maven clean install`
 
 ## Configuring yang-schema-registry-plugin
@@ -18,9 +18,9 @@ This repo provides components needed for native YANG in apache Kafka. Currently,
 1. Download and configure Confluent platform: see https://docs.confluent.io/platform/7.5/installation/installing_cp. For
    the purpose of this documentation, we denote the installation dir of Confluent's platform as `${CONFLUENT_DIR}`
 2. build the current project `mvn package`
-3. Copy the yang-schema-registry-plugin-0.1-shaded.jar to Confluent's schema registry java libs directory
+3. Copy the yang-schema-registry-plugin-0.2-shaded.jar to Confluent's schema registry java libs directory
     ```shell
-    cp yang-schema-registry-plugin/target/yang-schema-registry-plugin-0.1-shaded.jar ${CONFLUENT_DIR}/share/java/schema-registry/
+    cp yang-schema-registry-plugin/target/yang-schema-registry-plugin-0.2-shaded.jar ${CONFLUENT_DIR}/share/java/schema-registry/
     ``` 
 4. Enable the yang schema plugin by added the line
    `schema.providers=com.swisscom.kafka.schemaregistry.yang.YangSchemaProvider` to
@@ -31,3 +31,19 @@ This repo provides components needed for native YANG in apache Kafka. Currently,
 5. Restart the schema registry. When the plugin is loaded successfully, a log containing the message
    `[ INFO] - io.confluent.kafka.schemaregistry.storage.KafkaSchemaRegistry -KafkaSchemaRegistry.java(272) -Registering schema provider for YANG: ch.swisscom.kafka.schemaregistry.yang.YangSchemaProvider`
    is printed
+
+## Usage of Serializers without compiling from source
+Version v0.0.2 contains uber-jars to be installed locally. See [Here](https://github.com/network-analytics/yang-kafka-integration/releases/tag/v0.0.2).
+
+1. Download release v0.0.2
+2. Unzip `uber-jars-v0.0.2.zip`
+3. Install jar locally
+   - JSON
+     ```shell
+     mvn install:install-file -Dfile=<download_path>/kafka-yang-json-schema-serializer-0.2-shaded.jar -DgroupId=ch.swisscom -DartifactId=kafka-yang-json-schema-serializer -Dversion=0.2 -Dpackaging=jar
+     ```
+   - CBOR
+     ```shell
+     mvn install:install-file -Dfile=<download_path>/kafka-yang-cbor-schema-serializer-0.2-shaded.jar -DgroupId=ch.swisscom -DartifactId=kafka-yang-cbor-schema-serializer -Dversion=0.2 -Dpackaging=jar
+     ```
+4. Use as clients. Examples can be found in this repository: [schema-registry-samples](https://github.com/network-analytics/schema-registry-samples)
