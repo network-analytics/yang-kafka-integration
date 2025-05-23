@@ -102,27 +102,23 @@ public class KafkaYangCborSchemaSerializer<T>
             this.schemaRegistry
                 .parseSchema(YangSchema.TYPE, m.getOriginalString(), references)
                 .get();
-        if (dependenciesOrder.size() != 1 || tempLastModule != m) {
-          try {
-            this.schemaRegistry.register(m.getArgStr(), newSchema);
-          } catch (IOException | RestClientException e) {
-            throw new RuntimeException(e);
-          }
+        try {
+          this.schemaRegistry.register(m.getArgStr(), newSchema);
+        } catch (IOException | RestClientException e) {
+          throw new RuntimeException(e);
         }
         if (tempLastModule == m) {
           schemas.add(newSchema);
         }
       }
     }
-    if (schemas.size() == 1) {
-      return (YangSchema) schemas.get(0);
-    }
     List<SchemaReference> moduleReferences = new ArrayList<>();
     StringBuilder schemaName = new StringBuilder();
+    moduleReferences.addAll(convertToReferences(modules));
     for (ParsedSchema m : schemas) {
-      moduleReferences.add(new SchemaReference(m.name(), m.name(), -1));
       schemaName.append(m.name()).append("-");
     }
+    schemaName.append("root");
     return (YangSchema)
         this.schemaRegistry
             .parseSchema(YangSchema.TYPE, createYangSchema(schemaName.toString()), moduleReferences)
@@ -134,6 +130,16 @@ public class KafkaYangCborSchemaSerializer<T>
     List<SchemaReference> references = new ArrayList<>();
     for (Import currentImport : imports) {
       String subject = currentImport.getArgStr();
+      SchemaReference ref = new SchemaReference(subject, subject, -1);
+      references.add(ref);
+    }
+    return references;
+  }
+
+  private List<SchemaReference> convertToReferences(List<Module> modules) {
+    List<SchemaReference> references = new ArrayList<>();
+    for (Module module : modules) {
+      String subject = module.getArgStr();
       SchemaReference ref = new SchemaReference(subject, subject, -1);
       references.add(ref);
     }
