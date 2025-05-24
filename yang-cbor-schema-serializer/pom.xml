@@ -73,7 +73,6 @@
                                 <excludes>
                                     <!-- Exclude packages that are already included in the schema registry -->
                                     <!-- Exclude common dependencies with Confluent's schema-registry-->
-                                    <exclude>io.confluent:*</exclude>
                                     <exclude>com.fasterxml.jackson.core:*</exclude>
                                     <exclude>com.google.code.gson:*</exclude>
                                     <exclude>com.google.guava:*</exclude>
