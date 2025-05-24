@@ -46,4 +46,4 @@ Version v0.0.2 contains uber-jars to be installed locally. See [Here](https://gi
      ```shell
      mvn install:install-file -Dfile=<download_path>/kafka-yang-cbor-schema-serializer-0.2-shaded.jar -DgroupId=ch.swisscom -DartifactId=kafka-yang-cbor-schema-serializer -Dversion=0.2 -Dpackaging=jar
      ```
-4. Use as clients. Examples can be found in this repository: [schema-registry-samples](https://github.com/network-analytics/schema-registry-samples)
+4. Use as clients. Examples can be found in this repository (branch `new-namespaces`): [schema-registry-samples](https://github.com/network-analytics/schema-registry-samples/tree/new-namespaces)
