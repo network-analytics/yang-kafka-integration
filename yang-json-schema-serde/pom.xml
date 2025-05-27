@@ -5,11 +5,11 @@
     <parent>
         <groupId>ch.swisscom</groupId>
         <artifactId>yang-kafka-integration</artifactId>
-        <version>0.2</version>
+        <version>0.3</version>
     </parent>
 
     <artifactId>kafka-streams-yang-json-schema-serde</artifactId>
-    <version>0.2</version>
+    <version>0.3</version>
     <packaging>jar</packaging>
 
     <name>kafka-streams-yang-json-schema-serde</name>
