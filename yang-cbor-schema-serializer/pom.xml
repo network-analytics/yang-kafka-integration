@@ -5,10 +5,10 @@
     <parent>
         <groupId>ch.swisscom</groupId>
         <artifactId>yang-kafka-integration</artifactId>
-        <version>0.2</version>
+        <version>0.3</version>
     </parent>
     <artifactId>kafka-yang-cbor-schema-serializer</artifactId>
-    <version>0.2</version>
+    <version>0.3</version>
     <packaging>jar</packaging>
 
     <name>kafka-yang-cbor-schema-serializer</name>
