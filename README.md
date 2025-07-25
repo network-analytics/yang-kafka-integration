@@ -27,7 +27,7 @@ either built from source or installed directly from the pre-built JARS.
    git clone https://github.com/network-analytics/yangkit.git
    cd yangkit
    git checkout feature/yangkit-complete-validation
-   mvn pacakge install
+   mvn package install
    ```
 2. Compile and install the YANG kafka native integration
    ```bash
@@ -53,7 +53,7 @@ either built from source or installed directly from the pre-built JARS.
 3. Copy the yang-schema-registry-plugin-0.0.3-shaded.jar to Confluent's schema registry java libs directory
     ```shell
     cp yang-schema-registry-plugin/target/yang-schema-registry-plugin-0.0.3-shaded.jar ${CONFLUENT_DIR}/share/java/schema-registry/
-    ``` 
+    ```
 4. Enable the yang schema plugin by added the line
    `schema.providers=com.swisscom.kafka.schemaregistry.yang.YangSchemaProvider` to
    `${CONFLUENT_DIR}/etc/schema-registry/schema-registry.properties`
