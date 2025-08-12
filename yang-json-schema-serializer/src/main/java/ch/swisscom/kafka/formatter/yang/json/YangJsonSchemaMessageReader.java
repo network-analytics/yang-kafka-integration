@@ -27,7 +27,7 @@ import io.confluent.kafka.formatter.SchemaMessageSerializer;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.SchemaProvider;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.json.jackson.Jackson;
+import io.confluent.kafka.serializers.jackson.Jackson;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.Map;
@@ -35,7 +35,6 @@ import kafka.common.MessageReader;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
-import org.everit.json.schema.ValidationException;
 
 public class YangJsonSchemaMessageReader extends SchemaMessageReader<JsonNode>
     implements MessageReader {
@@ -77,7 +76,7 @@ public class YangJsonSchemaMessageReader extends SchemaMessageReader<JsonNode>
   protected JsonNode readFrom(String jsonString, ParsedSchema schema) {
     try {
       return objectMapper.readTree(jsonString);
-    } catch (IOException | ValidationException e) {
+    } catch (IOException e) {
       throw new SerializationException(
           String.format("Error serializing yang-json %s", jsonString), e);
     }

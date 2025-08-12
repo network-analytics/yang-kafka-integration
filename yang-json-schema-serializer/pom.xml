@@ -120,7 +120,7 @@
         </dependency>
         <dependency>
             <groupId>io.confluent</groupId>
-            <artifactId>kafka-json-schema-provider</artifactId>
+            <artifactId>kafka-json-serializer</artifactId>
             <version>${confluent.version}</version>
         </dependency>
         <dependency>
