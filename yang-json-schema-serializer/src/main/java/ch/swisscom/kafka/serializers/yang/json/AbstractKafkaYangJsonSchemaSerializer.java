@@ -36,6 +36,7 @@ import org.yangcentral.yangkit.model.api.codec.YangCodecException;
 public abstract class AbstractKafkaYangJsonSchemaSerializer<T> extends AbstractKafkaSchemaSerDe {
 
   public static final String SCHEMA_ID_KEY = "schema-id";
+  protected static final int idSize = 4;
   protected boolean normalizeSchema;
   protected boolean autoRegisterSchema;
   protected int useSchemaId = -1;
