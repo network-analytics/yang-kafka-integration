@@ -28,17 +28,16 @@ import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.SchemaProvider;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.json.jackson.Jackson;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.Map;
-import kafka.common.MessageReader;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.tools.api.RecordReader;
 import org.everit.json.schema.ValidationException;
 
 public class YangJsonSchemaMessageReader extends SchemaMessageReader<JsonNode>
-    implements MessageReader {
+    implements RecordReader {
 
   private static final ObjectMapper objectMapper = Jackson.newObjectMapper();
 
@@ -52,20 +51,10 @@ public class YangJsonSchemaMessageReader extends SchemaMessageReader<JsonNode>
       YangSchema valueSchema,
       String topic,
       boolean parseKey,
-      BufferedReader reader,
       boolean normalizeSchema,
       boolean autoRegister,
       boolean useLatest) {
-    super(
-        url,
-        keySchema,
-        valueSchema,
-        topic,
-        parseKey,
-        reader,
-        normalizeSchema,
-        autoRegister,
-        useLatest);
+    super(url, keySchema, valueSchema, topic, parseKey, normalizeSchema, autoRegister, useLatest);
   }
 
   @Override

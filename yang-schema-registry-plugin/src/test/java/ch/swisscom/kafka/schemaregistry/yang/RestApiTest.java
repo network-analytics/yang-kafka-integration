@@ -16,7 +16,10 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import io.confluent.kafka.schemaregistry.ClusterTestHarness;
 import io.confluent.kafka.schemaregistry.CompatibilityLevel;
@@ -27,7 +30,6 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaString;
 import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterSchemaRequest;
 import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterSchemaResponse;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.confluent.kafka.schemaregistry.rest.exceptions.Errors;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -35,21 +37,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.*;
 import java.util.stream.Collectors;
-import kafka.cluster.EndPoint;
-import kafka.server.KafkaConfig;
-import kafka.server.KafkaServer;
-import kafka.utils.TestUtils;
-import kafka.zk.EmbeddedZookeeper;
-import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.common.utils.Utils;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Module;
 import org.yangcentral.yangkit.register.YangStatementRegister;
-import scala.collection.JavaConverters;
 
 public class RestApiTest extends ClusterTestHarness {
 
@@ -59,55 +50,11 @@ public class RestApiTest extends ClusterTestHarness {
     super(DEFAULT_NUM_BROKERS, true);
   }
 
-  @Before
   @Override
-  public void setUp() throws Exception {
-    this.zookeeper = new EmbeddedZookeeper();
-    this.zkConnect = String.format("localhost:%d", this.zookeeper.port());
-    this.configs = new Vector();
-    this.servers = new Vector();
-
-    for (int i = 0; i < DEFAULT_NUM_BROKERS; ++i) {
-      KafkaConfig config = this.getKafkaConfig(i);
-      this.configs.add(config);
-      KafkaServer server = TestUtils.createServer(config, Time.SYSTEM);
-      this.servers.add(server);
-    }
-
-    ListenerName listenerType = ListenerName.forSecurityProtocol(this.getSecurityProtocol());
-    this.brokerList =
-        TestUtils.bootstrapServers(JavaConverters.asScalaBuffer(this.servers), listenerType);
-    String[] serverUrls = new String[this.servers.size()];
-
-    for (int i = 0; i < this.servers.size(); ++i) {
-      serverUrls[i] =
-          this.getSecurityProtocol()
-              + "://"
-              + Utils.formatAddress(
-                  ((EndPoint)
-                          ((KafkaServer) this.servers.get(i))
-                              .config()
-                              .effectiveAdvertisedListeners()
-                              .head())
-                      .host(),
-                  ((KafkaServer) this.servers.get(i)).boundPort(listenerType));
-    }
-
-    this.bootstrapServers = Utils.join(serverUrls, ",");
-
-    if (this.schemaRegistryPort == null) {
-      this.schemaRegistryPort = choosePort();
-    }
-
-    Properties schemaRegistryProps = this.getSchemaRegistryProperties();
-    schemaRegistryProps.put(
-        "listeners", this.getSchemaRegistryProtocol() + "://0.0.0.0:" + this.schemaRegistryPort);
-    schemaRegistryProps.put("mode.mutability", true);
-    // Load yang provider
-    schemaRegistryProps.put(
-        "schema.providers", "ch.swisscom.kafka.schemaregistry.yang.YangSchemaProvider");
-    this.setupRestApp(schemaRegistryProps);
-    SchemaRegistryRestApplication app;
+  protected Properties getSchemaRegistryProperties() {
+    Properties props = new Properties();
+    props.setProperty("schema.providers", YangSchemaProvider.class.getName());
+    return props;
   }
 
   public static List<String> getRandomYangSchemas(int num) {
@@ -156,11 +103,11 @@ public class RestApiTest extends ClusterTestHarness {
       throws IOException, RestClientException {
     int registeredId =
         restService.registerSchema(schemaString, YangSchema.TYPE, references, subject).getId();
-    Assert.assertEquals("Registering a new schema should succeed", expectedId, registeredId);
-    Assert.assertEquals(
-        "Registered schema should be found",
+    assertEquals(expectedId, registeredId, "Registering a new schema should succeed");
+    assertEquals(
         schemaString.trim(),
-        restService.getId(expectedId).getSchemaString().trim());
+        restService.getId(expectedId).getSchemaString().trim(),
+        "Registered schema should be found");
   }
 
   @Test
@@ -177,9 +124,9 @@ public class RestApiTest extends ClusterTestHarness {
 
     // test getAllSubjects with no existing data
     assertEquals(
-        "Getting all subjects should return empty",
         allSubjects,
-        restApp.restClient.getAllSubjects());
+        restApp.restClient.getAllSubjects(),
+        "Getting all subjects should return empty");
 
     // test registering and verifying new schemas in subject1
     int schemaIdCounter = 1;
@@ -200,9 +147,9 @@ public class RestApiTest extends ClusterTestHarness {
           restApp.restClient.registerSchema(
               schemaString, YangSchema.TYPE, Collections.emptyList(), subject1);
       assertEquals(
-          "Re-registering an existing schema should return the existing version",
           expectedId,
-          foundId.getId());
+          foundId.getId(),
+          "Re-registering an existing schema should return the existing version");
     }
 
     // test registering schemas in subject2
@@ -217,19 +164,19 @@ public class RestApiTest extends ClusterTestHarness {
 
     // test getAllVersions with existing data
     assertEquals(
-        "Getting all versions from subject1 should match all registered versions",
         allVersionsInSubject1,
-        restApp.restClient.getAllVersions(subject1));
+        restApp.restClient.getAllVersions(subject1),
+        "Getting all versions from subject1 should match all registered versions");
     assertEquals(
-        "Getting all versions from subject2 should match all registered versions",
         allVersionsInSubject2,
-        restApp.restClient.getAllVersions(subject2));
+        restApp.restClient.getAllVersions(subject2),
+        "Getting all versions from subject2 should match all registered versions");
 
     // test getAllSubjects with existing data
     assertEquals(
-        "Getting all subjects should match all registered subjects",
         allSubjects,
-        restApp.restClient.getAllSubjects());
+        restApp.restClient.getAllSubjects(),
+        "Getting all subjects should match all registered subjects");
   }
 
   @Test
@@ -245,14 +192,14 @@ public class RestApiTest extends ClusterTestHarness {
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
     int registeredId = restApp.restClient.registerSchema(request, "root", false).getId();
-    assertEquals("Registering a new schema should succeed", 2, registeredId);
+    assertEquals(2, registeredId, "Registering a new schema should succeed");
 
     SchemaString schemaString = restApp.restClient.getId(2);
     // the newly registered schema should be immediately readable on the leader
     assertEquals(
-        "Registered schema should be found", schemas.get("root"), schemaString.getSchemaString());
+        schemas.get("root"), schemaString.getSchemaString(), "Registered schema should be found");
 
-    assertEquals("Schema dependencies should be found", refs, schemaString.getReferences());
+    assertEquals(refs, schemaString.getReferences(), "Schema dependencies should be found");
 
     YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
     YangSchemaUtils.parseYangString("root", RootYangSchema, context);
@@ -263,7 +210,7 @@ public class RestApiTest extends ClusterTestHarness {
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), "root", false);
-    assertEquals("Registered schema should be found", 2, registeredSchema.getId().intValue());
+    assertEquals(2, registeredSchema.getId(), "Registered schema should be found");
   }
 
   @Test
@@ -280,16 +227,16 @@ public class RestApiTest extends ClusterTestHarness {
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
     int registeredId = restApp.restClient.registerSchema(request, interfaces, false).getId();
-    assertEquals("Registering a new schema should succeed", 2, registeredId);
+    assertEquals(2, registeredId, "Registering a new schema should succeed");
 
     SchemaString schemaString = restApp.restClient.getId(2);
     // the newly registered schema should be immediately readable on the leader
     assertEquals(
-        "Registered schema should be found",
         schemas.get(interfaces),
-        schemaString.getSchemaString());
+        schemaString.getSchemaString(),
+        "Registered schema should be found");
 
-    assertEquals("Schema dependencies should be found", refs, schemaString.getReferences());
+    assertEquals(refs, schemaString.getReferences(), "Schema dependencies should be found");
 
     YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
     YangSchemaUtils.parseYangString(interfaces, schemas.get(interfaces), context);
@@ -300,7 +247,7 @@ public class RestApiTest extends ClusterTestHarness {
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
-    assertEquals("Registered schema should be found", 2, registeredSchema.getId().intValue());
+    assertEquals(2, registeredSchema.getId(), "Registered schema should be found");
   }
 
   @Test
@@ -317,16 +264,16 @@ public class RestApiTest extends ClusterTestHarness {
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
     int registeredId = restApp.restClient.registerSchema(request, interfaces, false).getId();
-    assertEquals("Registering a new schema should succeed", 2, registeredId);
+    assertEquals(2, registeredId, "Registering a new schema should succeed");
 
     SchemaString schemaString = restApp.restClient.getId(2);
     // the newly registered schema should be immediately readable on the leader
     assertEquals(
-        "Registered schema should be found",
         schemas.get(interfaces),
-        schemaString.getSchemaString());
+        schemaString.getSchemaString(),
+        "Registered schema should be found");
 
-    assertEquals("Schema dependencies should be found", refs, schemaString.getReferences());
+    assertEquals(refs, schemaString.getReferences(), "Schema dependencies should be found");
 
     YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
     YangSchemaUtils.parseYangString(interfaces, schemas.get(interfaces), context);
@@ -337,7 +284,7 @@ public class RestApiTest extends ClusterTestHarness {
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
-    assertEquals("Registered schema should be found", 2, registeredSchema.getId().intValue());
+    assertEquals(2, registeredSchema.getId(), "Registered schema should be found");
   }
 
   @Test
@@ -361,7 +308,7 @@ public class RestApiTest extends ClusterTestHarness {
     requestYang10.setReferences(refsYang10);
     int registeredId =
         restApp.restClient.registerSchema(requestYang10, interfacesSubject, false).getId();
-    assertEquals("Registering a new schema should succeed", 3, registeredId);
+    assertEquals(3, registeredId, "Registering a new schema should succeed");
 
     restApp.restClient.updateCompatibility(CompatibilityLevel.BACKWARD.name, interfacesSubject);
     // Register backward-incompatible interfaces for Yang 1.1
@@ -377,10 +324,10 @@ public class RestApiTest extends ClusterTestHarness {
             .restClient
             .testCompatibility(requestYang11, interfacesSubject, "latest", false, true)
             .isEmpty();
-    assertFalse("Schema should be incompatible with specified version", isCompatible);
+    assertFalse(isCompatible, "Schema should be incompatible with specified version");
   }
 
-  @Test(expected = RestClientException.class)
+  @Test
   public void testSchemaMissingReferences() throws Exception {
     Map<String, String> schemas = getYangSchemaWithDependencies();
 
@@ -388,7 +335,8 @@ public class RestApiTest extends ClusterTestHarness {
     request.setSchema(schemas.get("root"));
     request.setSchemaType(YangSchema.TYPE);
     request.setReferences(Collections.emptyList());
-    restApp.restClient.registerSchema(request, "root", false);
+    assertThrows(
+        RestClientException.class, () -> restApp.restClient.registerSchema(request, "root", false));
   }
 
   @Test
@@ -398,15 +346,15 @@ public class RestApiTest extends ClusterTestHarness {
 
     // test getAllSubjects with no existing data
     assertEquals(
-        "Getting all subjects should return empty",
         allSubjects,
-        restApp.restClient.getAllSubjects());
+        restApp.restClient.getAllSubjects(),
+        "Getting all subjects should return empty");
 
     try {
       registerAndVerifySchema(restApp.restClient, getBadSchema(), 1, subject1);
       fail("Registering bad schema should fail with " + Errors.INVALID_SCHEMA_ERROR_CODE);
     } catch (RestClientException rce) {
-      assertEquals("Invalid schema", Errors.INVALID_SCHEMA_ERROR_CODE, rce.getErrorCode());
+      assertEquals(Errors.INVALID_SCHEMA_ERROR_CODE, rce.getErrorCode(), "Invalid schema");
     }
 
     try {
@@ -418,14 +366,14 @@ public class RestApiTest extends ClusterTestHarness {
           subject1);
       fail("Registering bad reference should fail with " + Errors.INVALID_SCHEMA_ERROR_CODE);
     } catch (RestClientException rce) {
-      assertEquals("Invalid schema", Errors.INVALID_SCHEMA_ERROR_CODE, rce.getErrorCode());
+      assertEquals(Errors.INVALID_SCHEMA_ERROR_CODE, rce.getErrorCode(), "Invalid schema");
     }
 
     // test getAllSubjects with existing data
     assertEquals(
-        "Getting all subjects should match all registered subjects",
         allSubjects,
-        restApp.restClient.getAllSubjects());
+        restApp.restClient.getAllSubjects(),
+        "Getting all subjects should match all registered subjects");
   }
 
   static final String RefYangSchema =
