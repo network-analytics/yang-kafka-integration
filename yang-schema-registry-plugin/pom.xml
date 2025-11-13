@@ -56,11 +56,31 @@
             <groupId>io.github.yang-central.yangkit</groupId>
             <artifactId>yangkit-data-json-codec</artifactId>
             <version>${yangkit.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common-utils</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.github.yang-central.yangkit</groupId>
             <artifactId>yangkit-parser</artifactId>
             <version>${yangkit.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common-utils</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.github.yang-central.yangkit</groupId>
@@ -70,6 +90,30 @@
                 <exclusion>
                     <groupId>io.github.yang-central.yangkit</groupId>
                     <artifactId>yangkit-parser</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common-utils</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>io.github.yang-central.yangkit</groupId>
+            <artifactId>yangkit-common</artifactId>
+            <version>${yangkit.common.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.yang-central.yangkit</groupId>
+            <artifactId>yangkit-common-utils</artifactId>
+            <version>${yangkit.common.utils.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.github.yang-central.yangkit</groupId>
+                    <artifactId>yangkit-common</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
