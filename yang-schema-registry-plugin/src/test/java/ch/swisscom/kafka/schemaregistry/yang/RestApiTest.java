@@ -483,6 +483,15 @@ public class RestApiTest extends ClusterTestHarness {
     return schemas;
   }
 
+  public static Map<String, String> getFanoYangSchemaWithDependencies() {
+    String typesSchema = readFile("yang/ietf-yang-types@2013-07-15.yang");
+    String interfacesSchema = readFile("yang/clean/ietf-interfaces@2018-02-20.yang");
+    Map<String, String> schemas = new HashMap<>();
+    schemas.put("ietf-yang-types", typesSchema);
+    schemas.put("ietf-interfaces", interfacesSchema);
+    return schemas;
+  }
+
   public static String getBadSchema() {
     return "module bad {\n";
   }
@@ -495,5 +504,48 @@ public class RestApiTest extends ClusterTestHarness {
       return reader.lines().collect(Collectors.joining(System.lineSeparator()));
     }
     return null;
+  }
+
+  @Test
+  public void testDebugFano() throws Exception {
+    // Registering dependencies
+    Map<String, String> schemasFano = getFanoYangSchemaWithDependencies();
+    Map<String, String> schemasYang11 = getIETFYang11SchemaWithDependencies();
+    String yangTypesSubject = "ietf-yang-types";
+    registerAndVerifySchema(
+        restApp.restClient, schemasFano.get(yangTypesSubject), 1, yangTypesSubject);
+    registerAndVerifySchema(
+        restApp.restClient, schemasYang11.get(yangTypesSubject), 1, yangTypesSubject);
+
+    // Register interfaces for FANO
+    String interfacesSubject = "ietf-interfaces";
+    RegisterSchemaRequest requestYangFANO = new RegisterSchemaRequest();
+    requestYangFANO.setSchema(schemasFano.get(interfacesSubject));
+    requestYangFANO.setSchemaType(YangSchema.TYPE);
+    SchemaReference refYangFANO = new SchemaReference(yangTypesSubject, yangTypesSubject, 1);
+    List<SchemaReference> refsYang10 = Collections.singletonList(refYangFANO);
+    requestYangFANO.setReferences(refsYang10);
+    int registeredId =
+        restApp.restClient.registerSchema(requestYangFANO, interfacesSubject, false).getId();
+    assertEquals("Registering a new schema should succeed", registeredId, 2);
+
+    restApp.restClient.updateCompatibility(CompatibilityLevel.BACKWARD.name, interfacesSubject);
+    // Register backward-incompatible interfaces for Yang 1.1
+    RegisterSchemaRequest requestYang11 = new RegisterSchemaRequest();
+    requestYang11.setSchema(schemasYang11.get(interfacesSubject));
+    requestYang11.setSchemaType(YangSchema.TYPE);
+    SchemaReference refYang11 = new SchemaReference(yangTypesSubject, yangTypesSubject, 1);
+    List<SchemaReference> refsYang11 = Collections.singletonList(refYang11);
+    requestYang11.setReferences(refsYang11);
+
+    List<String> ret =
+        restApp.restClient.testCompatibility(
+            requestYang11, interfacesSubject, "latest", false, true);
+
+    for (String s : ret) {
+      System.err.println("XXX RET: " + s);
+    }
+    boolean isCompatible = ret.isEmpty();
+    assertTrue("Schema should be compatible with specified version", isCompatible);
   }
 }
