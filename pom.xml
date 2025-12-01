@@ -70,7 +70,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <yangkit.version>1.4.5</yangkit.version>
+        <yangkit.version>1.5.0</yangkit.version>
         <yangkit.common.version>1.1.5</yangkit.common.version>
         <yangkit.common.utils.version>1.0.3</yangkit.common.utils.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
