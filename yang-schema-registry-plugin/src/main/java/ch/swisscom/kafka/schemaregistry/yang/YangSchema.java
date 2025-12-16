@@ -166,7 +166,7 @@ public class YangSchema implements ParsedSchema {
   @Override
   public ParsedSchema copy(
       Map<SchemaEntity, Set<String>> tagsToAdd, Map<SchemaEntity, Set<String>> tagsToRemove) {
-    throw new UnsupportedOperationException("Tag modifications is not implemented for YANG Schema");
+    throw new IllegalArgumentException("Tag modifications is not implemented for YANG Schema");
   }
 
   public YangSchemaContext yangSchemaContext() {
