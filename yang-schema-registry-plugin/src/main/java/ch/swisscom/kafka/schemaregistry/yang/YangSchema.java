@@ -24,14 +24,8 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaEntity;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.XMLWriter;
@@ -179,15 +173,16 @@ public class YangSchema implements ParsedSchema {
     return this.context;
   }
 
-  private static void writeDom4jDoc(org.dom4j.Document doc, OutputStream outputStream) {
-    OutputFormat format = OutputFormat.createPrettyPrint();
-    try {
+  private Optional<String> writeDom4jDoc(org.dom4j.Document doc) {
+    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+      OutputFormat format = OutputFormat.createPrettyPrint();
       XMLWriter writer = new XMLWriter(outputStream, format);
       writer.write(doc);
       writer.close();
-      outputStream.close();
-    } catch (IOException exception) {
-      exception.printStackTrace();
+      return Optional.of(outputStream.toString(Charset.defaultCharset()));
+    } catch (IOException e) {
+      log.error("Failed to write dom4j document", e);
+      return Optional.empty();
     }
   }
 
@@ -211,11 +206,14 @@ public class YangSchema implements ParsedSchema {
       List<String> ret = new ArrayList<>();
       if (nonBackwardCompatible) {
         boolean needCompatible = true;
-        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-        writeDom4jDoc(
-            comparator.outputXmlCompareResult(compareResults, needCompatible, compareType),
-            byteArrayOutputStream);
-        ret.add(byteArrayOutputStream.toString(Charset.defaultCharset().name()));
+        var output =
+            writeDom4jDoc(
+                comparator.outputXmlCompareResult(compareResults, needCompatible, compareType));
+        if (output.isPresent()) {
+          ret.add(output.get());
+        } else {
+          ret.add("Incompatible schema changes detected, but failed to generate report.");
+        }
       }
       return ret;
     } catch (Exception e) {
