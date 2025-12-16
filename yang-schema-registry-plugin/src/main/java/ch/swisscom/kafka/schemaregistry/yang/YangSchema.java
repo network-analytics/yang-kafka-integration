@@ -286,6 +286,26 @@ public class YangSchema implements ParsedSchema {
   }
 
   @Override
+  public boolean equals(Object obj) {
+    if (this == obj) {
+      return true;
+    }
+    if (obj == null || getClass() != obj.getClass()) {
+      return false;
+    }
+    YangSchema other = (YangSchema) obj;
+    return Objects.equals(
+            this.module.getModuleId().getModuleName(), other.module.getModuleId().getModuleName())
+        && Objects.equals(
+            this.module.getModuleId().getRevision(), other.module.getModuleId().getRevision())
+        && Objects.equals(this.module.getSubElements(), other.module.getSubElements())
+        && Objects.equals(this.references, other.references)
+        && Objects.equals(this.version(), other.version())
+        && Objects.equals(this.metadata, other.metadata)
+        && Objects.equals(this.ruleSet(), other.ruleSet());
+  }
+
+  @Override
   public Module rawSchema() {
     return this.module;
   }
