@@ -43,7 +43,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
     try {
-      SAXReader reader = new SAXReader();
+      SAXReader reader = SAXReader.createDefault();
       Document document = reader.read(inputStream);
       CompatibilityRules.getInstance().deserialize(document);
     } catch (Exception e) {
@@ -59,12 +59,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     try {
       if (configs.containsKey(YangSchemaProvider.YANG_COMPARATOR_RULES_CONFIG)) {
         String rulesPath = (String) configs.get(YangSchemaProvider.YANG_COMPARATOR_RULES_CONFIG);
-        SAXReader reader = new SAXReader();
+        SAXReader reader = SAXReader.createDefault();
         document = reader.read(new File(rulesPath));
       } else {
         URL rulesStream =
             YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
-        SAXReader reader = new SAXReader();
+        SAXReader reader = SAXReader.createDefault();
         document = reader.read(rulesStream);
       }
       CompatibilityRules.getInstance().deserialize(document);
