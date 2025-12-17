@@ -4,10 +4,10 @@
     <parent>
         <groupId>ch.swisscom</groupId>
         <artifactId>yang-kafka-integration</artifactId>
-        <version>0.0.4</version>
+        <version>0.0.5</version>
     </parent>
     <artifactId>yang-schema-registry-plugin</artifactId>
-    <version>0.0.4</version>
+    <version>0.0.5</version>
     <packaging>jar</packaging>
 
     <name>yang-schema-registry-plugin</name>
