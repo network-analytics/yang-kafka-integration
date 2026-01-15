@@ -18,9 +18,6 @@ package ch.swisscom.kafka.schemaregistry.yang;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
-import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
-import io.confluent.kafka.schemaregistry.client.rest.entities.RuleSet;
-import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaEntity;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -31,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.XMLWriter;
@@ -59,10 +55,7 @@ public class YangSchema implements ParsedSchema {
   private final YangSchemaContext context;
   private final List<SchemaReference> references;
   private final Map<String, String> resolvedReferences;
-  private final Metadata metadata;
   private final Integer version;
-  private final RuleSet ruleSet;
-
   private static final int NO_HASHCODE = Integer.MIN_VALUE;
   private transient int hashCode = NO_HASHCODE;
 
@@ -72,27 +65,13 @@ public class YangSchema implements ParsedSchema {
       YangSchemaContext context,
       Module module,
       List<SchemaReference> references,
-      Map<String, String> resolvedReferences,
-      Metadata metadata,
-      RuleSet ruleSet) {
+      Map<String, String> resolvedReferences) {
     this.schemaString = schemaString;
     this.version = version;
-
     this.context = context;
     this.module = module;
     this.references = Collections.unmodifiableList(references);
     this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
-    this.metadata = metadata;
-    this.ruleSet = ruleSet;
-  }
-
-  public YangSchema(
-      String schemaString,
-      YangSchemaContext context,
-      Module module,
-      List<SchemaReference> references,
-      Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null);
   }
 
   @Override
@@ -110,7 +89,6 @@ public class YangSchema implements ParsedSchema {
     return this.schemaString;
   }
 
-  @Override
   public Integer version() {
     return this.version;
   }
@@ -120,17 +98,6 @@ public class YangSchema implements ParsedSchema {
     return this.references;
   }
 
-  @Override
-  public Metadata metadata() {
-    return this.metadata;
-  }
-
-  @Override
-  public RuleSet ruleSet() {
-    return this.ruleSet;
-  }
-
-  @Override
   public YangSchema copy() {
     return new YangSchema(
         this.schemaString,
@@ -138,12 +105,9 @@ public class YangSchema implements ParsedSchema {
         this.context,
         this.module,
         this.references,
-        this.resolvedReferences,
-        this.metadata,
-        this.ruleSet);
+        this.resolvedReferences);
   }
 
-  @Override
   public YangSchema copy(Integer version) {
     return new YangSchema(
         this.schemaString,
@@ -151,28 +115,7 @@ public class YangSchema implements ParsedSchema {
         this.context,
         this.module,
         this.references,
-        this.resolvedReferences,
-        this.metadata,
-        this.ruleSet);
-  }
-
-  @Override
-  public YangSchema copy(Metadata metadata, RuleSet ruleSet) {
-    return new YangSchema(
-        this.schemaString,
-        this.version,
-        this.context,
-        this.module,
-        this.references,
-        this.resolvedReferences,
-        metadata,
-        ruleSet);
-  }
-
-  @Override
-  public ParsedSchema copy(
-      Map<SchemaEntity, Set<String>> tagsToAdd, Map<SchemaEntity, Set<String>> tagsToRemove) {
-    throw new IllegalArgumentException("Tag modifications is not implemented for YANG Schema");
+        this.resolvedReferences);
   }
 
   public YangSchemaContext yangSchemaContext() {
@@ -282,9 +225,7 @@ public class YangSchema implements ParsedSchema {
               this.module.getModuleId().getRevision(),
               this.module.getSubElements(),
               references,
-              version(),
-              metadata,
-              ruleSet());
+              version());
     }
     return hashCode;
   }
@@ -304,9 +245,7 @@ public class YangSchema implements ParsedSchema {
             this.module.getModuleId().getRevision(), other.module.getModuleId().getRevision())
         && Objects.equals(this.module.getSubElements(), other.module.getSubElements())
         && Objects.equals(this.references, other.references)
-        && Objects.equals(this.version(), other.version())
-        && Objects.equals(this.metadata, other.metadata)
-        && Objects.equals(this.ruleSet(), other.ruleSet());
+        && Objects.equals(this.version(), other.version());
   }
 
   @Override

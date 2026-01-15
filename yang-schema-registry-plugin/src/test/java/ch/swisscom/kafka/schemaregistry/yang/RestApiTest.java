@@ -25,7 +25,6 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaString;
 import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterSchemaRequest;
-import io.confluent.kafka.schemaregistry.client.rest.entities.requests.RegisterSchemaResponse;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.confluent.kafka.schemaregistry.rest.exceptions.Errors;
@@ -155,7 +154,7 @@ public class RestApiTest extends ClusterTestHarness {
       String subject)
       throws IOException, RestClientException {
     int registeredId =
-        restService.registerSchema(schemaString, YangSchema.TYPE, references, subject).getId();
+        restService.registerSchema(schemaString, YangSchema.TYPE, references, subject);
     Assert.assertEquals("Registering a new schema should succeed", expectedId, registeredId);
     Assert.assertEquals(
         "Registered schema should be found",
@@ -194,15 +193,15 @@ public class RestApiTest extends ClusterTestHarness {
 
     // test re-registering existing schemas
     for (int i = 0; i < schemasInSubject1; i++) {
-      int expectedId = i + 1;
+      Integer expectedId = i + 1;
       String schemaString = allSchemasInSubject1.get(i);
-      RegisterSchemaResponse foundId =
+      Integer foundId =
           restApp.restClient.registerSchema(
               schemaString, YangSchema.TYPE, Collections.emptyList(), subject1);
       assertEquals(
           "Re-registering an existing schema should return the existing version",
           expectedId,
-          foundId.getId());
+          foundId);
     }
 
     // test registering schemas in subject2
@@ -244,7 +243,7 @@ public class RestApiTest extends ClusterTestHarness {
     SchemaReference ref = new SchemaReference("ref", "ref", 1);
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
-    int registeredId = restApp.restClient.registerSchema(request, "root", false).getId();
+    int registeredId = restApp.restClient.registerSchema(request, "root", false);
     assertEquals("Registering a new schema should succeed", 2, registeredId);
 
     SchemaString schemaString = restApp.restClient.getId(2);
@@ -259,7 +258,7 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(RootYangSchema, context, module, refs, Collections.emptyMap());
+        new YangSchema(RootYangSchema, null, context, module, refs, Collections.emptyMap());
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), "root", false);
@@ -279,7 +278,7 @@ public class RestApiTest extends ClusterTestHarness {
     SchemaReference ref = new SchemaReference(yangTypes, yangTypes, 1);
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
-    int registeredId = restApp.restClient.registerSchema(request, interfaces, false).getId();
+    int registeredId = restApp.restClient.registerSchema(request, interfaces, false);
     assertEquals("Registering a new schema should succeed", 2, registeredId);
 
     SchemaString schemaString = restApp.restClient.getId(2);
@@ -296,7 +295,8 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(schemas.get(interfaces), context, module, refs, Collections.emptyMap());
+        new YangSchema(
+            schemas.get(interfaces), null, context, module, refs, Collections.emptyMap());
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
@@ -316,7 +316,7 @@ public class RestApiTest extends ClusterTestHarness {
     SchemaReference ref = new SchemaReference(yangTypes, yangTypes, 1);
     List<SchemaReference> refs = Collections.singletonList(ref);
     request.setReferences(refs);
-    int registeredId = restApp.restClient.registerSchema(request, interfaces, false).getId();
+    int registeredId = restApp.restClient.registerSchema(request, interfaces, false);
     assertEquals("Registering a new schema should succeed", 2, registeredId);
 
     SchemaString schemaString = restApp.restClient.getId(2);
@@ -333,7 +333,8 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(schemas.get(interfaces), context, module, refs, Collections.emptyMap());
+        new YangSchema(
+            schemas.get(interfaces), null, context, module, refs, Collections.emptyMap());
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
@@ -359,8 +360,7 @@ public class RestApiTest extends ClusterTestHarness {
     SchemaReference refYang10 = new SchemaReference(yangTypesSubject, yangTypesSubject, 1);
     List<SchemaReference> refsYang10 = Collections.singletonList(refYang10);
     requestYang10.setReferences(refsYang10);
-    int registeredId =
-        restApp.restClient.registerSchema(requestYang10, interfacesSubject, false).getId();
+    int registeredId = restApp.restClient.registerSchema(requestYang10, interfacesSubject, false);
     assertEquals("Registering a new schema should succeed", 3, registeredId);
 
     restApp.restClient.updateCompatibility(CompatibilityLevel.BACKWARD.name, interfacesSubject);
@@ -375,7 +375,7 @@ public class RestApiTest extends ClusterTestHarness {
     boolean isCompatible =
         restApp
             .restClient
-            .testCompatibility(requestYang11, interfacesSubject, "latest", false, true)
+            .testCompatibility(requestYang11, interfacesSubject, "latest", true)
             .isEmpty();
     assertFalse("Schema should be incompatible with specified version", isCompatible);
   }
@@ -525,8 +525,7 @@ public class RestApiTest extends ClusterTestHarness {
     SchemaReference refYangFANO = new SchemaReference(yangTypesSubject, yangTypesSubject, 1);
     List<SchemaReference> refsYang10 = Collections.singletonList(refYangFANO);
     requestYangFANO.setReferences(refsYang10);
-    int registeredId =
-        restApp.restClient.registerSchema(requestYangFANO, interfacesSubject, false).getId();
+    int registeredId = restApp.restClient.registerSchema(requestYangFANO, interfacesSubject, false);
     assertEquals("Registering a new schema should succeed", registeredId, 2);
 
     restApp.restClient.updateCompatibility(CompatibilityLevel.BACKWARD.name, interfacesSubject);
@@ -539,8 +538,7 @@ public class RestApiTest extends ClusterTestHarness {
     requestYang11.setReferences(refsYang11);
 
     List<String> ret =
-        restApp.restClient.testCompatibility(
-            requestYang11, interfacesSubject, "latest", false, true);
+        restApp.restClient.testCompatibility(requestYang11, interfacesSubject, "latest", false);
 
     for (String s : ret) {
       System.err.println("XXX RET: " + s);
