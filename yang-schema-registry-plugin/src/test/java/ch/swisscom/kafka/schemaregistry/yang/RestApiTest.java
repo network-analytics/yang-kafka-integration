@@ -497,4 +497,11 @@ public class RestApiTest extends ClusterTestHarness {
     boolean isCompatible = ret.isEmpty();
     assertTrue(isCompatible, "Schema should be compatible with specified version");
   }
+
+  @Test
+  public void testSubModule() throws Exception {
+    var schema_str = readFile("yang/huawei-routing-policy-type@2025-01-11.yang");
+    String subject = "huawei-routing-policy-type";
+    registerAndVerifySchema(restApp.restClient, schema_str, 1, subject);
+  }
 }
