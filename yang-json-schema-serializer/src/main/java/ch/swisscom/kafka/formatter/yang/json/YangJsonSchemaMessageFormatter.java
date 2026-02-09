@@ -47,9 +47,10 @@ public class YangJsonSchemaMessageFormatter extends SchemaMessageFormatter<YangD
   }
 
   @Override
-  protected void writeTo(String topic, Headers headers, byte[] data, PrintStream output)
+  protected void writeTo(
+      String topic, Boolean isKey, Headers headers, byte[] data, PrintStream output)
       throws IOException {
-    YangDataDocument object = deserializer.deserialize(topic, headers, data);
+    YangDataDocument object = deserializer.deserialize(topic, isKey, headers, data);
     JsonNode jsonNode;
     try {
       jsonNode = objectMapper.readTree(object.getDocString());
@@ -94,9 +95,10 @@ public class YangJsonSchemaMessageFormatter extends SchemaMessageFormatter<YangD
     }
 
     @Override
-    public YangDataDocument deserialize(String topic, Headers headers, byte[] payload)
+    public YangDataDocument deserialize(
+        String topic, Boolean isKey, Headers headers, byte[] payload)
         throws SerializationException {
-      return (YangDataDocument) super.deserialize(false, topic, isKey, headers, payload);
+      return super.deserialize(false, topic, isKey, headers, payload);
     }
 
     @Override

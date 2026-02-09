@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.cbor.CBORFactory;
-import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.RuleMode;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.schemaregistry.json.jackson.Jackson;
@@ -104,7 +103,7 @@ public abstract class AbstractKafkaYangCborSchemaDeserializer<T> extends Abstrac
               : subjectName(topic, isKey, null);
       YangSchema schema = ((YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id));
 
-      ParsedSchema readerSchema = null;
+      ExtendedSchema readerSchema = null;
       if (metadata != null) {
         readerSchema = getLatestWithMetadata(subject);
       } else if (useLatestVersion) {
@@ -118,7 +117,7 @@ public abstract class AbstractKafkaYangCborSchemaDeserializer<T> extends Abstrac
       }
       List<Migration> migrations = Collections.emptyList();
       if (readerSchema != null) {
-        migrations = getMigrations(subject, schema, readerSchema);
+        migrations = getMigrations(subject, schema, readerSchema.getSchema());
       }
 
       ByteBuffer buffer = ByteBuffer.wrap(payload);
@@ -133,7 +132,7 @@ public abstract class AbstractKafkaYangCborSchemaDeserializer<T> extends Abstrac
       }
 
       if (readerSchema != null) {
-        schema = (YangSchema) readerSchema;
+        schema = (YangSchema) readerSchema.getSchema();
       }
       if (schema.ruleSet() != null && schema.ruleSet().hasRules(RuleMode.READ)) {
         if (jsonNode == null) {
