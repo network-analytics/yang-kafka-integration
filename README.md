@@ -22,28 +22,46 @@ either built from source or installed directly from the pre-built JARS.
 ### Compile from source
 
 1. Compile and install YangKit fork from
-   branch [[feature/yangkit-complete-validation]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation)
+   branch [[feature/yangkit-complete-validation]](https://github.com/network-analytics/yangkit/tree/feature/yangkit-complete-validation2)
    ```bash
    git clone https://github.com/network-analytics/yangkit.git
    cd yangkit
-   git checkout feature/yangkit-complete-validation
+   git checkout feature/yangkit-complete-validation2
    mvn package install
    ```
-2. Compile and install the YANG kafka native integration
+2. Compile and install YangKit Compiler fork from
+   branch [[update-deps]](https://github.com/network-analytics/yang-compiler/tree/update-deps)
+   ```bash
+   git clone https://github.com/network-analytics/yang-compiler.git
+   cd yang-compiler
+   git checkout update-deps
+   mvn package install
+   ```
+
+3. Compile and install YangKit Comparator fork from
+   branch [[update-deps]](https://github.com/network-analytics/yang-comparator/tree/update-deps)
+   ```bash
+   git clone https://github.com/network-analytics/yang-comparator.git
+   cd yang-comparator
+   git checkout update-deps
+   mvn package install
+   ```
+
+4. Compile and install the YANG kafka native integration
    ```bash
    git clone https://github.com/network-analytics/yang-kafka-integration.git
    cd yang-kafka-integration
    mvn package install
    ```
-3. Check the produced jars
+5. Check the produced jars
     1. yang-schema-registry-plugin: `yang-schema-registry-plugin/target/yang-schema-registry-plugin-0.0.5-shaded.jar`
     2. yang-json-schema-serializer:
        `yang-json-schema-serializer/target/kafka-yang-json-schema-serializer-0.0.5-shaded.jar`
     3. yang-cbor-schema-serializer:
        `yang-cbor-schema-serializer/target/kafka-yang-cbor-schema-serializer-0.0.5-shaded.jar`
-4. To install the schema registry plugin
+6. To install the schema registry plugin
    see [Configuring yang-schema-registry-plugin](#Configuring-yang-schema-registry-plugin)
-5. To use JAVA producers/consumers in your Java project see  [Using YANG serdes](#Using YANG serdes)
+7. To use JAVA producers/consumers in your Java project see  [Using YANG serdes](#Using YANG serdes)
 
 ## Configuring yang-schema-registry-plugin
 
