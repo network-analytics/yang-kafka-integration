@@ -238,10 +238,15 @@ public class YangSchema implements ParsedSchema {
     ValidatorResult result = this.context.validate();
     if (!result.isOk()) {
       // YANGKit is not able to have complete validation context, this is only relevant for data
-      // validation
-      // which is not performed by the schema registry.
-      log.debug(
-          "Invalid YANG validation context, ignored for now, {}", result.print(Severity.ERROR));
+      // validation which is not performed by the schema registry.
+      for (var record : result.getRecords()) {
+        if (record.getSeverity().equals(Severity.ERROR)) {
+          log.debug(
+              "Invalid YANG validation context for module {}, ignored for now, {}",
+              module.getModuleId().getModuleName(),
+              record.getErrorMsg().getMessage());
+        }
+      }
     }
   }
 

@@ -93,10 +93,15 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       var result = context.validate();
       if (!result.isOk()) {
         // YANGKit is not able to have complete validation context, this is only relevant for data
-        // validation
-        // which is not performed by the schema registry.
-        log.debug(
-            "Invalid YANG validation context, ignored for now, {}", result.print(Severity.ERROR));
+        // validation which is not performed by the schema registry.
+        for (var record : result.getRecords()) {
+          if (record.getSeverity().equals(Severity.ERROR)) {
+            log.debug(
+                "Invalid YANG validation context for subject {}, ignored for now, {}",
+                schema.getSubject(),
+                record.getErrorMsg().getMessage());
+          }
+        }
       }
       Module rootModule = context.getModules().get(context.getModules().size() - 1);
       for (Import imported : rootModule.getImports()) {
