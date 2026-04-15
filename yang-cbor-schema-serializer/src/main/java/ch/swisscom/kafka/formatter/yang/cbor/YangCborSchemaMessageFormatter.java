@@ -26,7 +26,7 @@ import io.confluent.kafka.formatter.SchemaMessageDeserializer;
 import io.confluent.kafka.formatter.SchemaMessageFormatter;
 import io.confluent.kafka.schemaregistry.SchemaProvider;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.json.jackson.Jackson;
+import io.confluent.kafka.serializers.jackson.Jackson;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.Map;
