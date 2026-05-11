@@ -89,6 +89,7 @@
     <modules>
         <module>yang-schema-registry-plugin</module>
         <module>yang-json-schema-serializer</module>
+        <module>yang-schema-benchmark</module>
         <module>yang-json-schema-serde</module>
         <module>yang-cbor-schema-serializer</module>
         <module>yang-cbor-schema-serde</module>
@@ -103,6 +104,11 @@
         <repository>
             <id>jitpack.io</id>
             <url>https://jitpack.io</url>
+        </repository>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2</url>
         </repository>
     </repositories>
 
