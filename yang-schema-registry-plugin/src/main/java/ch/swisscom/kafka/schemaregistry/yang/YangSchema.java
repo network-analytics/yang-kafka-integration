@@ -199,6 +199,11 @@ public class YangSchema implements ParsedSchema {
       return Collections.singletonList("Incompatible schema types");
     }
     YangSchema previousYangSchema = (YangSchema) previousSchema;
+
+    if (this.equals(previousYangSchema)) {
+      return Collections.emptyList();
+    }
+
     YangComparator comparator =
         new YangComparator(previousYangSchema.yangSchemaContext(), this.context);
 
