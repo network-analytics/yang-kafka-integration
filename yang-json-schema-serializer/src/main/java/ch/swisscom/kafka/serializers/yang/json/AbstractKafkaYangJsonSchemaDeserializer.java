@@ -28,18 +28,23 @@ import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.header.Headers;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yangcentral.yangkit.data.api.model.YangDataDocument;
 import org.yangcentral.yangkit.model.api.codec.YangCodecException;
 
 public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaSchemaSerDe {
+
+  private static final Logger log =
+      LoggerFactory.getLogger(AbstractKafkaYangJsonSchemaDeserializer.class);
 
   protected ObjectMapper objectMapper = Jackson.newObjectMapper();
   protected boolean validate;
@@ -80,9 +85,10 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       boolean includeSchemaAndVersion, String topic, Boolean isKey, Headers headers, byte[] payload)
       throws SerializationException, InvalidConfigurationException {
     if (schemaRegistry == null) {
-      throw new InvalidConfigurationException(
+      log.error(
           "SchemaRegistryClient not found. You need to configure the deserializer "
               + "or use deserializer constructor with SchemaRegistryClient.");
+      return null;
     }
 
     if (payload == null) {
@@ -93,7 +99,11 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     try {
       byte[] serializedSchemaId =
           headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY).value();
-      id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      if (serializedSchemaId.length == 4) {
+        id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      } else {
+        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
+      }
 
       String subject =
           isKey == null || strategyUsesSchema(isKey)
@@ -149,9 +159,13 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
           }
           yangDataDocument = schema.validate(jsonNode);
         } catch (YangCodecException e) {
-          throw new SerializationException(
-              "YANG JSON " + jsonNode + " does not match YANG schema " + schema.canonicalString(),
+          log.error(
+              "YANG JSON {} does not match YANG schema {}: {}",
+              jsonNode,
+              schema.canonicalString(),
+              e.getMessage(),
               e);
+          return null;
         }
       }
       if (jsonNode == null) {
@@ -162,11 +176,14 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       }
       return yangDataDocument;
     } catch (InterruptedIOException e) {
-      throw new TimeoutException("Error deserializing YANG-JSON message for id " + id, e);
+      log.error("Timeout deserializing YANG-JSON message for id {}: {}", id, e.getMessage(), e);
+      return null;
     } catch (IOException | RuntimeException e) {
-      throw new SerializationException("Error deserializing YANG-JSON message for id " + id, e);
+      log.error("Error deserializing YANG-JSON message for id {}: {}", id, e.getMessage(), e);
+      return null;
     } catch (RestClientException e) {
-      throw toKafkaException(e, "Error retrieving YANG schema for id " + id);
+      log.error("Error retrieving YANG schema for id {}: {}", id, e.getMessage(), e);
+      return null;
     } finally {
       postOp(payload);
     }
