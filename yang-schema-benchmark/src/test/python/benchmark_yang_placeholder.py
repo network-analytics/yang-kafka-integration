@@ -10,11 +10,6 @@ from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-
-"""
-Usage:
-e.g. python3 benchmark_yang_placeholder.py https://schema-registry-url (1 or other number)
-"""
 SCHEMA_REGISTRY_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8081"
 NUM_SCHEMAS_BETWEEN_BREAKS = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 SCRIPT_DIR = Path(__file__).resolve().parent

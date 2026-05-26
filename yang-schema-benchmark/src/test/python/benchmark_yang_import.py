@@ -9,10 +9,6 @@ from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-"""
-usage: 
-python3 benchmark_yang_import.py https://schema-registry-url
-"""
 SCHEMA_REGISTRY_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8081"
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESOURCES_DIR = SCRIPT_DIR.parent / "resources"
