@@ -32,11 +32,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.XMLWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yangcentral.yangkit.common.api.exception.Severity;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResult;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResultBuilder;
 import org.yangcentral.yangkit.comparator.CompareType;
@@ -237,11 +237,16 @@ public class YangSchema implements ParsedSchema {
   public void validate() {
     ValidatorResult result = this.context.validate();
     if (!result.isOk()) {
-      throw new IllegalArgumentException(
-          "Invalid YANG schema:\n"
-              + result.getRecords().stream()
-                  .map(Object::toString)
-                  .collect(Collectors.joining("\n")));
+      // YANGKit is not able to have complete validation context, this is only relevant for data
+      // validation which is not performed by the schema registry.
+      for (var record : result.getRecords()) {
+        if (record.getSeverity().equals(Severity.ERROR)) {
+          log.debug(
+              "Invalid YANG validation context for module {}, ignored for now, {}",
+              module.getModuleId().getModuleName(),
+              record.getErrorMsg().getMessage());
+        }
+      }
     }
   }
 

@@ -18,6 +18,7 @@ package ch.swisscom.kafka.serializers.yang.cbor;
 
 import ch.swisscom.kafka.schemaregistry.yang.YangSchema;
 import ch.swisscom.kafka.schemaregistry.yang.YangSchemaProvider;
+import ch.swisscom.kafka.schemaregistry.yang.YangSchemaUtils;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -174,19 +175,28 @@ public abstract class AbstractKafkaYangCborSchemaDeserializer<T> extends Abstrac
   }
 
   private String subjectName(String topic, boolean isKey, YangSchema schemaFromRegistry) {
-    return getSubjectName(topic, isKey, null, schemaFromRegistry);
+    return isDeprecatedSubjectNameStrategy(isKey)
+        ? null
+        : getSubjectName(topic, isKey, null, schemaFromRegistry);
   }
 
   private YangSchema schemaForDeserialize(
       int id, YangSchema schemaFromRegistry, String subject, boolean isKey)
       throws IOException, RestClientException {
-    return (YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id);
+    return isDeprecatedSubjectNameStrategy(isKey)
+        ? YangSchemaUtils.copyOf(schemaFromRegistry)
+        : (YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id);
   }
 
   private Integer schemaVersion(
       String topic, boolean isKey, int id, String subject, YangSchema schema, Object value)
       throws IOException, RestClientException {
+    Integer version;
+    if (isDeprecatedSubjectNameStrategy(isKey)) {
+      subject = getSubjectName(topic, isKey, value, schema);
+    }
     YangSchema subjectSchema = (YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id);
-    return schemaRegistry.getVersion(subject, subjectSchema);
+    version = schemaRegistry.getVersion(subject, subjectSchema);
+    return version;
   }
 }

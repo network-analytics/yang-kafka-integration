@@ -15,7 +15,6 @@ import io.confluent.kafka.schemaregistry.testutil.MockSchemaRegistry;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Collections;
-import java.util.Optional;
 import java.util.Properties;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -79,12 +78,13 @@ public class KafkaYangJsonSchemaFormatterTest {
   public void testKafkaYangJsonValueFormatter() throws JsonProcessingException {
     String input = "{\"data\":{\"insa-test:insa-container\":{\"d\": \"test\"}}}";
 
-    InputStream reader = new ByteArrayInputStream(input.getBytes());
+    BufferedReader reader =
+        new BufferedReader(new InputStreamReader(new ByteArrayInputStream(input.getBytes())));
     YangJsonSchemaMessageReader yangJsonSchemaMessageReader =
         new YangJsonSchemaMessageReader(
-            url, null, recordSchema, "topic1", false, false, true, false);
+            url, null, recordSchema, "topic1", false, reader, false, true, false);
 
-    ProducerRecord<byte[], byte[]> message = yangJsonSchemaMessageReader.readRecords(reader).next();
+    ProducerRecord<byte[], byte[]> message = yangJsonSchemaMessageReader.readMessage();
     byte[] serializedValue = message.value();
 
     byte[] serializedSchemaId =
@@ -105,12 +105,12 @@ public class KafkaYangJsonSchemaFormatterTest {
             200,
             1000,
             TimestampType.LOG_APPEND_TIME,
+            0L,
             0,
             serializedValue.length,
             null,
             serializedValue,
-            headers,
-            Optional.empty());
+            headers);
 
     formatter.writeTo(crecord, ps);
 
@@ -123,12 +123,12 @@ public class KafkaYangJsonSchemaFormatterTest {
   public void testInvalidFormat() {
     String input = "{\"data\":{\"insa-test:insa-container\":{\"d\": \"test\"";
 
-    InputStream reader = new ByteArrayInputStream(input.getBytes());
+    BufferedReader reader =
+        new BufferedReader(new InputStreamReader(new ByteArrayInputStream(input.getBytes())));
     YangJsonSchemaMessageReader yangJsonSchemaMessageReader =
         new YangJsonSchemaMessageReader(
-            url, null, recordSchema, "topic1", false, false, true, false);
+            url, null, recordSchema, "topic1", false, reader, false, true, false);
 
-    assertThrowsExactly(
-        SerializationException.class, () -> yangJsonSchemaMessageReader.readRecords(reader).next());
+    assertThrowsExactly(SerializationException.class, yangJsonSchemaMessageReader::readMessage);
   }
 }

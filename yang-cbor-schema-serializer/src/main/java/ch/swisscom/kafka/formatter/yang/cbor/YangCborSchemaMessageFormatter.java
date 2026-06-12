@@ -99,7 +99,7 @@ public class YangCborSchemaMessageFormatter extends SchemaMessageFormatter<YangD
     public YangDataDocument deserialize(
         String topic, Boolean isKey, Headers headers, byte[] payload)
         throws SerializationException {
-      return super.deserialize(false, topic, isKey, headers, payload);
+      return (YangDataDocument) super.deserialize(false, topic, isKey, headers, payload);
     }
 
     @Override
