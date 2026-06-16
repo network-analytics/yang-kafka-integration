@@ -66,6 +66,8 @@ public class YangSchema implements ParsedSchema {
   private static final int NO_HASHCODE = Integer.MIN_VALUE;
   private transient int hashCode = NO_HASHCODE;
 
+  private final boolean hotfixEnabled;
+
   public YangSchema(
       String schemaString,
       Integer version,
@@ -74,7 +76,8 @@ public class YangSchema implements ParsedSchema {
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
       Metadata metadata,
-      RuleSet ruleSet) {
+      RuleSet ruleSet,
+      boolean hotfixEnabled) {
     this.schemaString = schemaString;
     this.version = version;
 
@@ -84,6 +87,7 @@ public class YangSchema implements ParsedSchema {
     this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
     this.metadata = metadata;
     this.ruleSet = ruleSet;
+    this.hotfixEnabled = hotfixEnabled;
   }
 
   public YangSchema(
@@ -91,8 +95,18 @@ public class YangSchema implements ParsedSchema {
       YangSchemaContext context,
       Module module,
       List<SchemaReference> references,
-      Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null);
+      Map<String, String> resolvedReferences,
+      boolean hotfixEnabled) {
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, hotfixEnabled);
+  }
+
+  public YangSchema(
+          String schemaString,
+          YangSchemaContext context,
+          Module module,
+          List<SchemaReference> references,
+          Map<String, String> resolvedReferences) {
+    this(schemaString, null, context, module, references, resolvedReferences,null, null, false);
   }
 
   @Override
@@ -140,7 +154,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet);
+        this.ruleSet,
+        this.hotfixEnabled);
   }
 
   @Override
@@ -153,7 +168,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet);
+        this.ruleSet,
+        this.hotfixEnabled);
   }
 
   @Override
@@ -166,7 +182,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         metadata,
-        ruleSet);
+        ruleSet,
+        this.hotfixEnabled);
   }
 
   @Override
@@ -194,6 +211,10 @@ public class YangSchema implements ParsedSchema {
 
   @Override
   public List<String> isBackwardCompatible(ParsedSchema previousSchema) {
+    if (hotfixEnabled) {
+      log.debug("Hotfix mode: skipping backward compatibility check for {}", this.name());
+      return Collections.emptyList();
+    }
     log.debug("Checking if schema is backward compatible: {} and {}", this, previousSchema);
     if (!(previousSchema instanceof YangSchema)) {
       return Collections.singletonList("Incompatible schema types");

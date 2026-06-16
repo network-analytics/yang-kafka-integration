@@ -38,8 +38,11 @@ import org.yangcentral.yangkit.register.YangStatementRegister;
 public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
+  public static final String YANG_HOTFIX_PERFORMANCE_ENABLED = "yang.hotfix.performance.enabled";
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
+
+  private boolean hotfixEnabled = false;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -72,6 +75,13 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     } catch (Exception e) {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
+
+    if (configs.containsKey(YANG_HOTFIX_PERFORMANCE_ENABLED)) {
+      this.hotfixEnabled = Boolean.parseBoolean(String.valueOf(configs.get(YANG_HOTFIX_PERFORMANCE_ENABLED)));
+    } else if (System.getProperty(YANG_HOTFIX_PERFORMANCE_ENABLED) != null) {
+      this.hotfixEnabled = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_PERFORMANCE_ENABLED));
+    }
+    log.info("YANG Schema provider hotfix - {}", this.hotfixEnabled ? "ENABLED" : "disabled (default)");
   }
 
   @Override
@@ -85,21 +95,25 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     try {
-      // Parse first resolved references
-      for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
-        YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
+      if (!hotfixEnabled) {
+        for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
+          YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
+        }
       }
       YangSchemaUtils.parseSchema(schema, context);
-      var result = context.validate();
-      if (!result.isOk()) {
-        // YANGKit is not able to have complete validation context, this is only relevant for data
-        // validation which is not performed by the schema registry.
-        for (var record : result.getRecords()) {
-          if (record.getSeverity().equals(Severity.ERROR)) {
-            log.debug(
-                "Invalid YANG validation context for subject {}, ignored for now, {}",
-                schema.getSubject(),
-                record.getErrorMsg().getMessage());
+
+      if (!hotfixEnabled) {
+        var result = context.validate();
+        if (!result.isOk()) {
+          // YANGKit is not able to have complete validation context, this is only relevant for data
+          // validation which is not performed by the schema registry.
+          for (var record : result.getRecords()) {
+            if (record.getSeverity().equals(Severity.ERROR)) {
+              log.debug(
+                  "Invalid YANG validation context for subject {}, ignored for now, {}",
+                  schema.getSubject(),
+                  record.getErrorMsg().getMessage());
+            }
           }
         }
       }
@@ -112,7 +126,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       YangSchema yangSchema =
           new YangSchema(
-              schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences);
+              schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences, hotfixEnabled);
       return yangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
