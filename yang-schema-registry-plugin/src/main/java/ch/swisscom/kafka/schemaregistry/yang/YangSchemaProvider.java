@@ -38,11 +38,15 @@ import org.yangcentral.yangkit.register.YangStatementRegister;
 public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
-  public static final String YANG_HOTFIX_PERFORMANCE_ENABLED = "yang.hotfix.performance.enabled";
+
+  public static final String YANG_HOTFIX_SKIP_REFERENCE_PARSING = "yang.hotfix.skip-reference-parsing";
+  public static final String YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK = "yang.hotfix.skip-compatibility-check";
+
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  private boolean hotfixEnabled = false;
+  private boolean skipReferenceParsing = false;
+  private boolean skipCompatibilityCheck = false;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -76,12 +80,15 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
 
-    if (configs.containsKey(YANG_HOTFIX_PERFORMANCE_ENABLED)) {
-      this.hotfixEnabled = Boolean.parseBoolean(String.valueOf(configs.get(YANG_HOTFIX_PERFORMANCE_ENABLED)));
-    } else if (System.getProperty(YANG_HOTFIX_PERFORMANCE_ENABLED) != null) {
-      this.hotfixEnabled = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_PERFORMANCE_ENABLED));
+    this.skipReferenceParsing = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_REFERENCE_PARSING, "false"));
+    this.skipCompatibilityCheck = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK, "false"));
+
+    if (skipReferenceParsing && !skipCompatibilityCheck) {
+      log.debug("[hotfix] skip-reference-parsing=true forces skip-compatibility-check=true");
+      this.skipCompatibilityCheck = true;
     }
-    log.info("YANG Schema provider hotfix - {}", this.hotfixEnabled ? "ENABLED" : "disabled (default)");
+
+    log.info("[hotfix] skip-reference-parsing: {}, skip-compatibility-check: {}", skipReferenceParsing, skipCompatibilityCheck);
   }
 
   @Override
@@ -95,14 +102,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     try {
-      if (!hotfixEnabled) {
+      if (!skipReferenceParsing) {
         for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
           YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
         }
       }
       YangSchemaUtils.parseSchema(schema, context);
 
-      if (!hotfixEnabled) {
+      if (!skipReferenceParsing) {
         var result = context.validate();
         if (!result.isOk()) {
           // YANGKit is not able to have complete validation context, this is only relevant for data
@@ -126,7 +133,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       YangSchema yangSchema =
           new YangSchema(
-              schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences, hotfixEnabled);
+              schema.getSchema(), context, rootModule, schema.getReferences(),
+              resolvedReferences, skipCompatibilityCheck);
       return yangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
