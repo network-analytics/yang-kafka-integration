@@ -22,6 +22,7 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
@@ -40,6 +41,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
+
+  private final Map<String, Module> referenceModuleCache = new ConcurrentHashMap<>();
+  private final Map<String, String> referenceSchemaCache = new ConcurrentHashMap<>();
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -85,10 +89,31 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     try {
-      // Parse first resolved references
       for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
-        YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
+        String refName = entry.getKey();
+        String refSchema = entry.getValue();
+
+        Module cachedModule = referenceModuleCache.get(refName);
+        String cachedSchema = referenceSchemaCache.get(refName);
+
+        if (cachedModule != null && refSchema.equals(cachedSchema)) {
+          log.debug("Re-using cached reference module: {}", refName);
+          context.addModule(cachedModule);
+        } else {
+          log.debug("Parsing and caching reference module: {}", refName);
+          int moduleCountBefore = context.getModules().size();
+          YangSchemaUtils.parseYangString(refName, refSchema, context);
+
+          // The newly parsed module is the last one just added
+          if (context.getModules().size() > moduleCountBefore) {
+            Module parsedModule = context.getModules().get(context.getModules().size() - 1);
+            referenceModuleCache.put(refName, parsedModule);
+            referenceSchemaCache.put(refName, refSchema);
+          }
+        }
       }
+
+      // Parse main schema
       YangSchemaUtils.parseSchema(schema, context);
       var result = context.validate();
       if (!result.isOk()) {
@@ -110,10 +135,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           throw new IllegalArgumentException("Unresolved import: " + imported);
         }
       }
-      YangSchema yangSchema =
-          new YangSchema(
+      return new YangSchema(
               schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences);
-      return yangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
       throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);
