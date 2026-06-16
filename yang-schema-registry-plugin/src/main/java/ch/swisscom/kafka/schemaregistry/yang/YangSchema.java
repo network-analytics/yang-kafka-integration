@@ -97,16 +97,25 @@ public class YangSchema implements ParsedSchema {
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
       boolean skipCompatibilityCheck) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, skipCompatibilityCheck);
+    this(
+        schemaString,
+        null,
+        context,
+        module,
+        references,
+        resolvedReferences,
+        null,
+        null,
+        skipCompatibilityCheck);
   }
 
   public YangSchema(
-          String schemaString,
-          YangSchemaContext context,
-          Module module,
-          List<SchemaReference> references,
-          Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences,null, null, false);
+      String schemaString,
+      YangSchemaContext context,
+      Module module,
+      List<SchemaReference> references,
+      Map<String, String> resolvedReferences) {
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, false);
   }
 
   @Override

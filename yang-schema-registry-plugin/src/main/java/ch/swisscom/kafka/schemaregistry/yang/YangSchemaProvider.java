@@ -39,8 +39,10 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
 
-  public static final String YANG_HOTFIX_SKIP_REFERENCE_PARSING = "yang.hotfix.skip-reference-parsing";
-  public static final String YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK = "yang.hotfix.skip-compatibility-check";
+  public static final String YANG_HOTFIX_SKIP_REFERENCE_PARSING =
+      "yang.hotfix.skip-reference-parsing";
+  public static final String YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK =
+      "yang.hotfix.skip-compatibility-check";
 
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
@@ -80,15 +82,20 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
 
-    this.skipReferenceParsing = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_REFERENCE_PARSING, "false"));
-    this.skipCompatibilityCheck = Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK, "false"));
+    this.skipReferenceParsing =
+        Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_REFERENCE_PARSING, "false"));
+    this.skipCompatibilityCheck =
+        Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK, "false"));
 
     if (skipReferenceParsing && !skipCompatibilityCheck) {
       log.debug("[hotfix] skip-reference-parsing=true forces skip-compatibility-check=true");
       this.skipCompatibilityCheck = true;
     }
 
-    log.info("[hotfix] skip-reference-parsing: {}, skip-compatibility-check: {}", skipReferenceParsing, skipCompatibilityCheck);
+    log.info(
+        "[hotfix] skip-reference-parsing: {}, skip-compatibility-check: {}",
+        skipReferenceParsing,
+        skipCompatibilityCheck);
   }
 
   @Override
@@ -133,8 +140,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       YangSchema yangSchema =
           new YangSchema(
-              schema.getSchema(), context, rootModule, schema.getReferences(),
-              resolvedReferences, skipCompatibilityCheck);
+              schema.getSchema(),
+              context,
+              rootModule,
+              schema.getReferences(),
+              resolvedReferences,
+              skipCompatibilityCheck);
       return yangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
