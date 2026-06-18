@@ -283,9 +283,7 @@ public class YangSchema implements ParsedSchema {
     if (hashCode == NO_HASHCODE) {
       hashCode =
           Objects.hash(
-              this.module.getModuleId().getModuleName(),
-              this.module.getModuleId().getRevision(),
-              this.module.getSubElements(),
+              this.schemaString,
               references,
               version(),
               metadata,
@@ -303,11 +301,7 @@ public class YangSchema implements ParsedSchema {
       return false;
     }
     YangSchema other = (YangSchema) obj;
-    return Objects.equals(
-            this.module.getModuleId().getModuleName(), other.module.getModuleId().getModuleName())
-        && Objects.equals(
-            this.module.getModuleId().getRevision(), other.module.getModuleId().getRevision())
-        && Objects.equals(this.module.getSubElements(), other.module.getSubElements())
+    return Objects.equals(this.schemaString, other.schemaString)
         && Objects.equals(this.references, other.references)
         && Objects.equals(this.version(), other.version())
         && Objects.equals(this.metadata, other.metadata)

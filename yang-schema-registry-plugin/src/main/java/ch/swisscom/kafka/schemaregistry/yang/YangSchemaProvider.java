@@ -27,7 +27,6 @@ import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.yangcentral.yangkit.common.api.exception.Severity;
 import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Import;
@@ -115,19 +114,20 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
       // Parse main schema
       YangSchemaUtils.parseSchema(schema, context);
-      var result = context.validate();
-      if (!result.isOk()) {
-        // YANGKit is not able to have complete validation context, this is only relevant for data
-        // validation which is not performed by the schema registry.
-        for (var record : result.getRecords()) {
-          if (record.getSeverity().equals(Severity.ERROR)) {
-            log.debug(
-                "Invalid YANG validation context for subject {}, ignored for now, {}",
-                schema.getSubject(),
-                record.getErrorMsg().getMessage());
-          }
-        }
-      }
+      // duplicate?
+//      var result = context.validate();
+//      if (!result.isOk()) {
+//        // YANGKit is not able to have complete validation context, this is only relevant for data
+//        // validation which is not performed by the schema registry.
+//        for (var record : result.getRecords()) {
+//          if (record.getSeverity().equals(Severity.ERROR)) {
+//            log.debug(
+//                "Invalid YANG validation context for subject {}, ignored for now, {}",
+//                schema.getSubject(),
+//                record.getErrorMsg().getMessage());
+//          }
+//        }
+//      }
       Module rootModule = context.getModules().get(context.getModules().size() - 1);
       for (Import imported : rootModule.getImports()) {
         // AH: do we need to resolve imports recursively?! Assuming this check was done on each one
