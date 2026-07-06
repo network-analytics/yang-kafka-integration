@@ -68,6 +68,11 @@
             </exclusions>
         </dependency>
         <dependency>
+            <groupId>com.netgauze</groupId>
+            <artifactId>yanglib-java</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
             <groupId>io.github.yang-central.yangkit</groupId>
             <artifactId>yangkit-parser</artifactId>
             <version>${yangkit.version}</version>
@@ -241,12 +246,9 @@
                                     <exclude>org.junit.platform:*</exclude>
                                 </excludes>
                             </artifactSet>
-                            <relocations>
-                                <relocation>
-                                    <pattern>io.github.yang-central.yangkit</pattern>
-                                    <shadedPattern>shaded.io.github.yang-central.yangkit</shadedPattern>
-                                </relocation>
-                            </relocations>
+                            <!-- No relocations needed: io.github.yang-central.yangkit is a Maven
+                                 groupId (contains hyphens), not a Java package, so ASM cannot
+                                 relocate it and it would crash the shade plugin. -->
                         </configuration>
                     </execution>
                 </executions>
