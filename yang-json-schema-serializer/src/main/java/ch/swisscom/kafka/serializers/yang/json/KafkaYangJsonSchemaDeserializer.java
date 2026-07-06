@@ -21,10 +21,14 @@ import java.io.IOException;
 import java.util.Map;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Deserializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.yangcentral.yangkit.data.api.model.YangDataDocument;
 
 public class KafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaYangJsonSchemaDeserializer
     implements Deserializer<YangDataDocument> {
+
+  private static final Logger log = LoggerFactory.getLogger(KafkaYangJsonSchemaDeserializer.class);
 
   /** Constructor used by Kafka consumer. */
   public KafkaYangJsonSchemaDeserializer() {}
@@ -61,7 +65,17 @@ public class KafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaYangJsonSch
 
   @Override
   public YangDataDocument deserialize(String topic, Headers headers, byte[] bytes) {
-    return deserialize(false, topic, isKey, headers, bytes);
+    try {
+      return deserialize(false, topic, isKey, headers, bytes);
+    } catch (Throwable e) {
+      log.error(
+          "Failed to deserialize record on topic '{}', record: [{}], error: {}",
+          topic,
+          bytes != null ? new String(bytes) : "<null>",
+          e.getMessage(),
+          e);
+      return null;
+    }
   }
 
   @Override

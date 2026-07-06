@@ -95,6 +95,10 @@ public class YangSchema implements ParsedSchema {
     this(schemaString, null, context, module, references, resolvedReferences, null, null);
   }
 
+  public Map<String, String> resolvedReferences() {
+    return this.resolvedReferences;
+  }
+
   @Override
   public String schemaType() {
     return TYPE;
@@ -255,17 +259,29 @@ public class YangSchema implements ParsedSchema {
     YangDataDocument yangDataDocument =
         new YangDataDocumentJsonParser(schemaContext).parse(jsonNode, validatorResultBuilder);
     yangDataDocument.update();
+    System.out.println("YANG Encoded Message: " + jsonNode.toString());
     ValidatorResult parseResult = validatorResultBuilder.build();
 
     if (!parseResult.isOk()) {
+      System.out.println(
+          "YANG JSON does not match YANG schema Parse. Validation errors:\n"
+              + parseResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
       throw new YangCodecException("YANG encoded message is not valid");
     }
 
     ValidatorResult validationResult = yangDataDocument.validate();
 
     if (!validationResult.isOk()) {
+      System.out.println(
+          "YANG JSON does not match YANG schema. Validation errors:\n"
+              + validationResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
       throw new YangCodecException("YANG encoded message is not valid");
     }
+    System.out.println("Message Consumed : " + jsonNode.toString());
     return yangDataDocument;
   }
 
