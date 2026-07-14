@@ -46,8 +46,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  private final Map<String, Module> referenceModuleCache = new ConcurrentHashMap<>();
-  private final Map<String, String> referenceSchemaCache = new ConcurrentHashMap<>();
+//  private final Map<String, Module> referenceModuleCache = new ConcurrentHashMap<>();
+//  private final Map<String, String> referenceSchemaCache = new ConcurrentHashMap<>();
 
   private boolean skipReferenceParsing = false;
   private boolean skipCompatibilityCheck = false;
@@ -112,24 +112,24 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           String refName = entry.getKey();
           String refSchema = entry.getValue();
 
-          Module cachedModule = referenceModuleCache.get(refName);
-          String cachedSchema = referenceSchemaCache.get(refName);
+//          Module cachedModule = referenceModuleCache.get(refName);
+//          String cachedSchema = referenceSchemaCache.get(refName);
 
-          if (cachedModule != null && refSchema.equals(cachedSchema)) {
-            log.debug("Re-using cached reference module: {}", refName);
-            context.addModule(cachedModule);
-          } else {
+//          if (cachedModule != null && refSchema.equals(cachedSchema)) {
+//            log.debug("Re-using cached reference module: {}", refName);
+//            context.addModule(cachedModule);
+//          } else {
             log.debug("Parsing and caching reference module: {}", refName);
             int moduleCountBefore = context.getModules().size();
             YangSchemaUtils.parseYangString(refName, refSchema, context);
 
             // The newly parsed module is the last one just added
-            if (context.getModules().size() > moduleCountBefore) {
-              Module parsedModule = context.getModules().get(context.getModules().size() - 1);
-              referenceModuleCache.put(refName, parsedModule);
-              referenceSchemaCache.put(refName, refSchema);
-            }
-          }
+//            if (context.getModules().size() > moduleCountBefore) {
+//              Module parsedModule = context.getModules().get(context.getModules().size() - 1);
+//              referenceModuleCache.put(refName, parsedModule);
+//              referenceSchemaCache.put(refName, refSchema);
+//            }
+//          }
         }
       }
 
