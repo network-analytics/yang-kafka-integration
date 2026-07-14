@@ -27,6 +27,7 @@ import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yangcentral.yangkit.common.api.exception.Severity;
 import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Import;
@@ -38,11 +39,18 @@ import org.yangcentral.yangkit.register.YangStatementRegister;
 public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
+
+  public static final String SKIP_REFERENCE_PARSING = "yang.hotfix.skip-reference-parsing";
+  public static final String SKIP_COMPATIBILITY_CHECK = "yang.hotfix.skip-compatibility-check";
+
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
   private final Map<String, Module> referenceModuleCache = new ConcurrentHashMap<>();
   private final Map<String, String> referenceSchemaCache = new ConcurrentHashMap<>();
+
+  private boolean skipReferenceParsing = false;
+  private boolean skipCompatibilityCheck = false;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -75,6 +83,17 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     } catch (Exception e) {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
+
+    this.skipReferenceParsing = Boolean.parseBoolean(System.getProperty(SKIP_REFERENCE_PARSING, "false"));
+    this.skipCompatibilityCheck = Boolean.parseBoolean(System.getProperty(SKIP_COMPATIBILITY_CHECK, "false"));
+
+    if (skipReferenceParsing && !skipCompatibilityCheck) {
+      log.debug("[hotfix] skip-reference-parsing=true forces skip-compatibility-check=true");
+      this.skipCompatibilityCheck = true;
+    }
+
+    log.info("[hotfix] skip-reference-parsing: {}, skip-compatibility-check: {}",
+            skipReferenceParsing, skipCompatibilityCheck);
   }
 
   @Override
@@ -88,46 +107,52 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     try {
-      for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
-        String refName = entry.getKey();
-        String refSchema = entry.getValue();
+      if (!skipReferenceParsing) {
+        for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
+          String refName = entry.getKey();
+          String refSchema = entry.getValue();
 
-        Module cachedModule = referenceModuleCache.get(refName);
-        String cachedSchema = referenceSchemaCache.get(refName);
+          Module cachedModule = referenceModuleCache.get(refName);
+          String cachedSchema = referenceSchemaCache.get(refName);
 
-        if (cachedModule != null && refSchema.equals(cachedSchema)) {
-          log.debug("Re-using cached reference module: {}", refName);
-          context.addModule(cachedModule);
-        } else {
-          log.debug("Parsing and caching reference module: {}", refName);
-          int moduleCountBefore = context.getModules().size();
-          YangSchemaUtils.parseYangString(refName, refSchema, context);
+          if (cachedModule != null && refSchema.equals(cachedSchema)) {
+            log.debug("Re-using cached reference module: {}", refName);
+            context.addModule(cachedModule);
+          } else {
+            log.debug("Parsing and caching reference module: {}", refName);
+            int moduleCountBefore = context.getModules().size();
+            YangSchemaUtils.parseYangString(refName, refSchema, context);
 
-          // The newly parsed module is the last one just added
-          if (context.getModules().size() > moduleCountBefore) {
-            Module parsedModule = context.getModules().get(context.getModules().size() - 1);
-            referenceModuleCache.put(refName, parsedModule);
-            referenceSchemaCache.put(refName, refSchema);
+            // The newly parsed module is the last one just added
+            if (context.getModules().size() > moduleCountBefore) {
+              Module parsedModule = context.getModules().get(context.getModules().size() - 1);
+              referenceModuleCache.put(refName, parsedModule);
+              referenceSchemaCache.put(refName, refSchema);
+            }
           }
         }
       }
 
       // Parse main schema
       YangSchemaUtils.parseSchema(schema, context);
-      // duplicate?
-//      var result = context.validate();
-//      if (!result.isOk()) {
-//        // YANGKit is not able to have complete validation context, this is only relevant for data
-//        // validation which is not performed by the schema registry.
-//        for (var record : result.getRecords()) {
-//          if (record.getSeverity().equals(Severity.ERROR)) {
-//            log.debug(
-//                "Invalid YANG validation context for subject {}, ignored for now, {}",
-//                schema.getSubject(),
-//                record.getErrorMsg().getMessage());
-//          }
-//        }
-//      }
+
+      if (!skipReferenceParsing) {
+        // todo: duplicate?
+        var result = context.validate();
+        if (!result.isOk()) {
+          // YANGKit is not able to have complete validation context, this is only relevant for data
+          // validation which is not performed by the schema registry.
+          for (var record : result.getRecords()) {
+            if (record.getSeverity().equals(Severity.ERROR)) {
+              log.debug(
+                      "Invalid YANG validation context for subject {}, ignored for now, {}",
+                      schema.getSubject(),
+                      record.getErrorMsg().getMessage());
+            }
+          }
+        }
+      }
+
       Module rootModule = context.getModules().get(context.getModules().size() - 1);
       for (Import imported : rootModule.getImports()) {
         // AH: do we need to resolve imports recursively?! Assuming this check was done on each one
@@ -136,7 +161,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         }
       }
       return new YangSchema(
-              schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences);
+          schema.getSchema(),
+          context,
+          rootModule,
+          schema.getReferences(),
+          resolvedReferences,
+          skipCompatibilityCheck);
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
       throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);
