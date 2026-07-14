@@ -28,15 +28,17 @@ import org.yangcentral.yangkit.parser.YangParserException;
 
 public class YangSchemaUtils {
 
-  private static final YangParser YANG_PARSER = new YangParser();
+//  private static final YangParser YANG_PARSER = new YangParser();
 
   public static void parseYangString(String name, String schemaString, YangSchemaContext context)
       throws YangParserException {
+    YangParser yangParser = new YangParser();
+
     YangParserEnv yangParserEnv = new YangParserEnv();
     yangParserEnv.setYangStr(schemaString);
     yangParserEnv.setFilename(name);
     yangParserEnv.setCurPos(0);
-    List<YangElement> elementList = YANG_PARSER.parseYang(schemaString, yangParserEnv);
+    List<YangElement> elementList = yangParser.parseYang(schemaString, yangParserEnv);
     // Add the yang module to the context;
     for (YangElement element : elementList) {
       if (element instanceof YangStatement) {
