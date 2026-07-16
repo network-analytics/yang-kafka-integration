@@ -170,10 +170,6 @@ public class YangLibraryCacheBuilder {
     YangSchemaContext cached = contextCache.get(schemaId);
     if (cached != null) return cached;
     if (failedSchemaIds.contains(schemaId)) {
-      System.out.println(
-          "[Cache] Skipping schema-id="
-              + schemaId
-              + " (previously failed to build — all records for this schema-id are being dropped)");
       log.warn("[Cache] Skipping schema-id={} (previously failed to build)", schemaId);
       return null;
     }
@@ -193,30 +189,11 @@ public class YangLibraryCacheBuilder {
                   long start = System.currentTimeMillis();
                   YangSchemaContext ctx = buildAndCache(id, subject);
                   long elapsed = System.currentTimeMillis() - start;
-                  System.out.println(
-                      "[Cache] Async schema build complete for schema-id="
-                          + id
-                          + " in "
-                          + elapsed
-                          + "ms");
-                  log.info(
-                      "[Cache] Async schema build complete for schema-id={} in {}ms", id, elapsed);
+                  log.info("[Cache] Async schema build complete for schema-id={} in {}ms", id, elapsed);
                   future.complete(ctx);
                 } catch (Exception e) {
                   failedSchemaIds.add(id);
-                  System.out.println(
-                      "[Cache] Async schema build FAILED for schema-id="
-                          + id
-                          + ": "
-                          + e.getClass().getName()
-                          + ": "
-                          + e.getMessage());
-                  e.printStackTrace(System.out);
-                  log.error(
-                      "[Cache] Async schema build failed for schema-id={}: {}",
-                      id,
-                      e.getMessage(),
-                      e);
+                  log.error("[Cache] Async schema build failed for schema-id={}: {}", id, e.getMessage(), e);
                   future.completeExceptionally(e);
                 } finally {
                   pendingBuilds.remove(id);
@@ -227,14 +204,7 @@ public class YangLibraryCacheBuilder {
     // Do NOT block the consumer thread — return null so Kafka keeps polling.
     // The deserializer handles null context as warn-and-continue (no crash, no rebalance).
     // Once the background build finishes, the next getOrBuild() call hits the cache fast path.
-    System.out.println(
-        "[Cache] Schema not yet ready for schema-id="
-            + schemaId
-            + " — returning null, record skipped (build in progress)");
-    log.warn(
-        "[Cache] Schema not yet ready for schema-id={} — record deserialized without YANG context"
-            + " (building in background)",
-        schemaId);
+    log.warn("[Cache] Schema not yet ready for schema-id={} — record deserialized without YANG context (building in background)", schemaId);
     return null;
   }
 
@@ -248,7 +218,8 @@ public class YangLibraryCacheBuilder {
     File yangLibXml = new File(schemaDir, "yang-lib.xml");
     File modulesDir = new File(schemaDir, "modules");
 
-    if (!yangLibXml.exists() || modulesDir.list() == null || modulesDir.list().length == 0) {
+    String[] existingModules = modulesDir.list();
+    if (!yangLibXml.exists() || existingModules == null || existingModules.length == 0) {
       schemaDir.mkdirs();
       modulesDir.mkdirs();
       log.info("Fetching YANG modules for schema-id={} from Schema Registry", schemaId);
@@ -316,8 +287,7 @@ public class YangLibraryCacheBuilder {
       List<String> features = new ArrayList<>(featureSet);
       List<String> deviations = deviationMap.getOrDefault(name, Collections.emptyList());
       if (!deviations.isEmpty()) {
-        System.out.println(
-            "[yang-lib.xml] Module '" + name + "' will have <deviation> entries: " + deviations);
+        log.debug("[yang-lib.xml] Module '{}' will have deviation entries: {}", name, deviations);
       }
 
       // file:// location so YangLibraryParser finds the file directly
@@ -378,7 +348,7 @@ public class YangLibraryCacheBuilder {
     List<SchemaReference> rootRefs =
         rootRaw.getReferences() != null ? rootRaw.getReferences() : Collections.emptyList();
     Map<String, List<String>> rootTags = fetchTagsForSubject(subject);
-    result.put(rootName, new ModuleData(rootYangText, rootRefs, rootTags));
+    result.put(rootName, new ModuleData(rootYangText, rootTags));
 
     // BFS over all transitive references
     java.util.Queue<SchemaReference> queue = new java.util.LinkedList<>(rootRefs);
@@ -398,7 +368,7 @@ public class YangLibraryCacheBuilder {
                   ? refSchema.getReferences()
                   : Collections.emptyList();
           Map<String, List<String>> tags = fetchTagsForSubject(ref.getSubject());
-          result.put(modName, new ModuleData(yangText, refs, tags));
+          result.put(modName, new ModuleData(yangText, tags));
           queue.addAll(refs);
         }
       } catch (Exception e) {
@@ -486,14 +456,13 @@ public class YangLibraryCacheBuilder {
       String devModuleName = entry.getKey();
       Set<String> deviatedModules = extractDeviatedModuleNames(entry.getValue().yangText);
       if (!deviatedModules.isEmpty()) {
-        System.out.println("[DeviationScan] '" + devModuleName + "' deviates: " + deviatedModules);
+        log.debug("[DeviationScan] '{}' deviates: {}", devModuleName, deviatedModules);
       }
       for (String deviatedModule : deviatedModules) {
         deviationMap.computeIfAbsent(deviatedModule, k -> new ArrayList<>()).add(devModuleName);
       }
     }
-    System.out.println(
-        "[DeviationScan] deviationMap (targetModule -> deviatingModules): " + deviationMap);
+    log.debug("[DeviationScan] deviationMap (targetModule -> deviatingModules): {}", deviationMap);
     return deviationMap;
   }
 
@@ -564,12 +533,10 @@ public class YangLibraryCacheBuilder {
   /** Internal data holder */
   private static final class ModuleData {
     final String yangText;
-    final List<SchemaReference> references;
     final Map<String, List<String>> tags;
 
-    ModuleData(String yangText, List<SchemaReference> references, Map<String, List<String>> tags) {
+    ModuleData(String yangText, Map<String, List<String>> tags) {
       this.yangText = yangText;
-      this.references = references;
       this.tags = tags;
     }
   }
@@ -596,10 +563,7 @@ public class YangLibraryCacheBuilder {
       for (org.yangcentral.yangkit.model.api.stmt.Module module : modules) {
         module.build();
       }
-      System.out.println(
-          "[Cache] buildOnly() completed for " + ctx.getModules().size() + " modules");
-      log.info(
-          "[Cache] buildOnly() completed successfully for {} modules", ctx.getModules().size());
+      log.info("[Cache] buildOnly() completed successfully for {} modules", ctx.getModules().size());
     } catch (Exception e) {
       log.warn("[Cache] buildOnly() threw: {} — continuing with partial context.", e.getMessage());
     }

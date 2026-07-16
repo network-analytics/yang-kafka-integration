@@ -130,23 +130,18 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
         id = ByteBuffer.wrap(serializedSchemaId).getInt();
       }
     } catch (Exception e) {
-      System.out.println(
-          "[SCHEMA-ID ERROR] Failed to read schema-id header: "
-              + e.getClass().getSimpleName()
-              + ": "
-              + e.getMessage());
       log.warn("Failed to read schema-id header: {}", e.getMessage());
       return null;
     }
 
     // ── YANG Library path (deviations + features applied) ─────────────────────
     if (yangLibraryCacheBuilder != null) {
-      System.out.println("[Deserializer] YANG Library path — schema-id=" + id);
+      log.debug("[Deserializer] YANG Library path — schema-id={}", id);
       return deserializeWithYangLibrary(id, topic, isKey, payload);
     }
 
     // ── Legacy Schema-Registry-only path ──────────────────────────────────────
-    System.out.println("[Deserializer] Legacy SR path — schema-id=" + id);
+    log.debug("[Deserializer] Legacy SR path — schema-id={}", id);
     return deserializeWithSchemaRegistry(id, topic, isKey, headers, payload);
   }
 
@@ -178,8 +173,6 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
 
       YangSchemaContext ctx = yangLibraryCacheBuilder.getOrBuild(schemaId, subject);
       if (ctx == null) {
-        System.out.println(
-            "[Deserializer] ctx=null for schema-id=" + schemaId + " — record skipped");
         log.warn("No schema context available for schema-id={}. Skipping record.", schemaId);
         return null;
       }
@@ -215,7 +208,6 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
                       + " | badElement="
                       + r.getBadElement();
               unknownElementMessages.add(msg);
-              System.out.println(msg);
               log.warn(
                   "[UNKNOWN_ELEMENT] schema-id={} | path={} | message={} | badElement={}",
                   schemaId,
@@ -226,15 +218,6 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
           }
         }
         if (hasUnknownElements) {
-          // Warn but continue — UNKNOWN_ELEMENT typically means a vendor/augmenting module
-          // or an identity module (iana-if-type, ietf-udp-notif-transport, etc.) is absent
-          // from Schema Registry. Partial schemas are normal in telemetry deployments.
-          // Records are NOT dropped; the document is returned as-is with the warnings above.
-          System.out.println(
-              "[UNKNOWN_ELEMENT] schema-id="
-                  + schemaId
-                  + " — continuing despite missing module references (partial schema):\n  "
-                  + String.join("\n  ", unknownElementMessages));
           log.warn(
               "[UNKNOWN_ELEMENT] schema-id={} — partial schema, {} unresolved elements. Record accepted.",
               schemaId,
@@ -249,15 +232,7 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
                     .collect(java.util.stream.Collectors.toList());
         if (!parseErrors.isEmpty()) {
           String errors = String.join("\n  ", parseErrors);
-          System.out.println(
-              "Deserialization failed for schema-id="
-                  + schemaId
-                  + " — parse errors:\n  "
-                  + errors
-                  + "\nPayload: "
-                  + new String(payload, java.nio.charset.StandardCharsets.UTF_8));
-          log.warn(
-              "YANG JSON parse errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
+          log.warn("YANG JSON parse errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
           return null;
         }
 
@@ -282,17 +257,7 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
                     .collect(java.util.stream.Collectors.toList());
         if (!validationErrors.isEmpty()) {
           String errors = String.join("\n  ", validationErrors);
-          System.out.println(
-              "Deserialization failed for schema-id="
-                  + schemaId
-                  + " — validation errors:\n  "
-                  + errors
-                  + "\nPayload: "
-                  + new String(payload, java.nio.charset.StandardCharsets.UTF_8));
-          log.warn(
-              "YANG JSON validation errors for schema-id={} — message skipped:\n  {}",
-              schemaId,
-              errors);
+          log.warn("YANG JSON validation errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
           return null;
         }
       }
@@ -304,22 +269,9 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
         return null;
       }
       log.debug("[SUCCESS] schema-id={} deserialized OK", schemaId);
-      System.out.println("[SUCCESS] schema-id=" + schemaId + " deserialized OK");
       return doc;
     } catch (Exception e) {
-      System.out.println(
-          "[EXCEPTION] schema-id="
-              + schemaId
-              + ": "
-              + e.getClass().getSimpleName()
-              + ": "
-              + e.getMessage());
-      e.printStackTrace(System.out);
-      log.error(
-          "Error deserializing YANG JSON via YANG Library for schema-id={}: {}",
-          schemaId,
-          e.getMessage(),
-          e);
+      log.error("Error deserializing YANG JSON via YANG Library for schema-id={}: {}", schemaId, e.getMessage(), e);
       return null;
     }
   }
