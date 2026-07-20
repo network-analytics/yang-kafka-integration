@@ -65,6 +65,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private final Map<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
   private final Map<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
+  private final YangSchemaProviderMetrics metrics;
+
   private boolean skipReferenceParsing = false;
   private boolean skipCompatibilityCheck = false;
 
@@ -100,6 +102,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           return size() > DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE;
         }
       });
+    this.metrics =
+        new YangSchemaProviderMetrics(parsedSchemaCache::size, referenceModuleCache::size);
   }
 
   @Override
@@ -144,12 +148,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   @Override
   public ParsedSchema parseSchemaOrElseThrow(Schema schema, boolean isNew, boolean normalize) {
+    metrics.recordRequest();
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     ParsedSchemaCacheKey cacheKey = buildParsedSchemaCacheKey(schema.getSchema(), resolvedReferences);
     YangSchema cachedParsedSchema = parsedSchemaCache.get(cacheKey);
     if (cachedParsedSchema != null) {
       log.info("Re-using fully parsed schema from cache for subject {}", schema.getSubject());
+      metrics.recordParsedSchemaCacheHit();
       return new YangSchema(
           cachedParsedSchema.canonicalString(),
           cachedParsedSchema.yangSchemaContext(),
@@ -158,6 +164,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           resolvedReferences,
           skipCompatibilityCheck);
     }
+    metrics.recordParsedSchemaCacheMiss();
 
     YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
 
@@ -171,11 +178,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           ReferenceCacheEntry cached = referenceModuleCache.get(referenceCacheKey);
 
           if (cached != null) {
-            // todo: add metrics to monitor for cache hit counter
             log.debug("Re-using cached reference module: {}, refSchema: {}", refName, refSchema);
+            metrics.recordReferenceModuleCacheHit(refName);
             context.addModule(cached.module());
           } else {
             log.debug("Parsing from raw and caching reference module: {}, refSchema: {}", refName, refSchema);
+            metrics.recordReferenceModuleCacheMiss(refName);
             int moduleCountBefore = context.getModules().size();
             YangSchemaUtils.parseYangString(refName, refSchema, context);
 
