@@ -16,6 +16,7 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
+import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
@@ -68,6 +69,8 @@ public class YangSchema implements ParsedSchema {
 
   private final boolean skipCompatibilityCheck;
 
+  private final YangSchemaProviderMetrics metrics;
+
   public YangSchema(
       String schemaString,
       Integer version,
@@ -77,7 +80,8 @@ public class YangSchema implements ParsedSchema {
       Map<String, String> resolvedReferences,
       Metadata metadata,
       RuleSet ruleSet,
-      boolean skipCompatibilityCheck) {
+      boolean skipCompatibilityCheck,
+      YangSchemaProviderMetrics metrics) {
     this.schemaString = schemaString;
     this.version = version;
 
@@ -88,6 +92,7 @@ public class YangSchema implements ParsedSchema {
     this.metadata = metadata;
     this.ruleSet = ruleSet;
     this.skipCompatibilityCheck = skipCompatibilityCheck;
+    this.metrics = metrics;
   }
 
   public YangSchema(
@@ -96,7 +101,8 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
-      boolean skipCompatibilityCheck) {
+      boolean skipCompatibilityCheck,
+      YangSchemaProviderMetrics metrics) {
     this(
         schemaString,
         null,
@@ -106,7 +112,8 @@ public class YangSchema implements ParsedSchema {
         resolvedReferences,
         null,
         null,
-        skipCompatibilityCheck);
+        skipCompatibilityCheck,
+        metrics);
   }
 
   public YangSchema(
@@ -115,7 +122,7 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, false);
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, false, null);
   }
 
   @Override
@@ -164,7 +171,8 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.skipCompatibilityCheck);
+        this.skipCompatibilityCheck,
+        this.metrics);
   }
 
   @Override
@@ -178,7 +186,8 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.skipCompatibilityCheck);
+        this.skipCompatibilityCheck,
+        this.metrics);
   }
 
   @Override
@@ -192,7 +201,8 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         metadata,
         ruleSet,
-        this.skipCompatibilityCheck);
+        this.skipCompatibilityCheck,
+        this.metrics);
   }
 
   @Override
@@ -226,6 +236,7 @@ public class YangSchema implements ParsedSchema {
     }
     log.debug("Checking if schema is backward compatible: {} and {}", this, previousSchema);
     if (!(previousSchema instanceof YangSchema)) {
+      recordCompatibilityCheckFailure();
       return Collections.singletonList("Incompatible schema types");
     }
     YangSchema previousYangSchema = (YangSchema) previousSchema;
@@ -241,6 +252,7 @@ public class YangSchema implements ParsedSchema {
               .anyMatch(x -> x == CompatibilityRule.Compatibility.NBC);
       List<String> ret = new ArrayList<>();
       if (nonBackwardCompatible) {
+        recordCompatibilityCheckFailure();
         boolean needCompatible = true;
         var output =
             writeDom4jDoc(
@@ -254,7 +266,14 @@ public class YangSchema implements ParsedSchema {
       return ret;
     } catch (Exception e) {
       log.error("Yang Schema Comparator exception", e);
+      recordCompatibilityCheckFailure();
       return Collections.singletonList("Incompatible schema types");
+    }
+  }
+
+  private void recordCompatibilityCheckFailure() {
+    if (metrics != null) {
+      metrics.recordCompatibilityCheckFailure(this.name());
     }
   }
 

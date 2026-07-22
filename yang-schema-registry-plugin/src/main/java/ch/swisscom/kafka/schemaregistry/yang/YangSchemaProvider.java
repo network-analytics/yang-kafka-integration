@@ -16,13 +16,13 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
+import ch.swisscom.kafka.schemaregistry.util.BoundedCache;
+import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import io.confluent.kafka.schemaregistry.AbstractSchemaProvider;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.dom4j.Document;
@@ -48,24 +48,19 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  private static final int DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE = 1000;
-  private static final int DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE = 500;
-
-  private static final int LINKED_HASH_MAP_DEFAULT_INITIAL_CAPACITY = 16;
-  private static final float LINKED_HASH_MAP_DEFAULT_LOAD_FACTOR = 0.75f;
-  private static final boolean LINKED_HASH_MAP_ACCESS_ORDER = true; // todo: true takes more MEM and less CPU, test more
+  // todo: test a proper value or make it configurable
+  private static final int DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE = 50;
+  private static final int DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE = 30;
 
   private record ReferenceCacheEntry(Module module, String schemaString) {}
 
-  // Composite record keys
   private record ReferenceCacheKey(String refName, String refSchema) {}
   private record ParsedSchemaCacheKey(String schemaString, Map<String, String> resolvedReferences) {}
 
-  // todo: test impact of having each individual cache
-  private final Map<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
-  private final Map<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
+  private final BoundedCache<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
+  private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
-  private final YangSchemaProviderMetrics metrics;
+  private YangSchemaProviderMetrics metrics;
 
   private boolean skipReferenceParsing = false;
   private boolean skipCompatibilityCheck = false;
@@ -80,30 +75,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
     YangStatementImplRegister.registerImpl();
-    this.parsedSchemaCache = Collections.synchronizedMap(
-      new LinkedHashMap<ParsedSchemaCacheKey, YangSchema>(
-              LINKED_HASH_MAP_DEFAULT_INITIAL_CAPACITY,
-              LINKED_HASH_MAP_DEFAULT_LOAD_FACTOR,
-              LINKED_HASH_MAP_ACCESS_ORDER
-      ) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<ParsedSchemaCacheKey, YangSchema> eldest) {
-          return size() > DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE;
-        }
-      });
-    this.referenceModuleCache = Collections.synchronizedMap(
-      new LinkedHashMap<ReferenceCacheKey, ReferenceCacheEntry>(
-              LINKED_HASH_MAP_DEFAULT_INITIAL_CAPACITY,
-              LINKED_HASH_MAP_DEFAULT_LOAD_FACTOR,
-              LINKED_HASH_MAP_ACCESS_ORDER
-      ) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<ReferenceCacheKey, ReferenceCacheEntry> eldest) {
-          return size() > DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE;
-        }
-      });
-    this.metrics =
-        new YangSchemaProviderMetrics(parsedSchemaCache::size, referenceModuleCache::size);
+
+    this.parsedSchemaCache =
+        new BoundedCache<>(DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE, () -> metrics.recordParsedSchemaCacheEviction());
+    this.referenceModuleCache =
+        new BoundedCache<>(DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE, () -> metrics.recordReferenceModuleCacheEviction());
+
+    this.metrics = new YangSchemaProviderMetrics(parsedSchemaCache::size, referenceModuleCache::size,
+            DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE + DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE);
   }
 
   @Override
@@ -154,17 +133,17 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     ParsedSchemaCacheKey cacheKey = buildParsedSchemaCacheKey(schema.getSchema(), resolvedReferences);
     YangSchema cachedParsedSchema = parsedSchemaCache.get(cacheKey);
     if (cachedParsedSchema != null) {
-      log.info("Re-using fully parsed schema from cache for subject {}", schema.getSubject());
-      metrics.recordParsedSchemaCacheHit();
+      log.debug("Re-using fully parsed schema from cache for subject {}", schema.getSubject());
+      metrics.recordSchemaCacheHit(cachedParsedSchema.name());
       return new YangSchema(
           cachedParsedSchema.canonicalString(),
           cachedParsedSchema.yangSchemaContext(),
           cachedParsedSchema.rawSchema(),
           schema.getReferences(),
           resolvedReferences,
-          skipCompatibilityCheck);
+          skipCompatibilityCheck,
+          metrics);
     }
-    metrics.recordParsedSchemaCacheMiss();
 
     YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
 
@@ -179,11 +158,11 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
           if (cached != null) {
             log.debug("Re-using cached reference module: {}, refSchema: {}", refName, refSchema);
-            metrics.recordReferenceModuleCacheHit(refName);
+            metrics.recordReferenceCacheHit(refName);
             context.addModule(cached.module());
           } else {
-            log.debug("Parsing from raw and caching reference module: {}, refSchema: {}", refName, refSchema);
-            metrics.recordReferenceModuleCacheMiss(refName);
+            log.debug("Parsing module from raw, and caching it: {}, refSchema: {}", refName, refSchema);
+            metrics.recordReferenceCacheMiss(refName);
             int moduleCountBefore = context.getModules().size();
             YangSchemaUtils.parseYangString(refName, refSchema, context);
 
@@ -199,23 +178,26 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       // Parse main schema
       YangSchemaUtils.parseSchema(schema, context);
 
+      Module rootModule = context.getModules().get(context.getModules().size() - 1);
       if (!skipReferenceParsing) {
-        // todo: duplicate?
         var result = context.validate();
         if (!result.isOk()) {
           // YANGKit is not able to have complete validation context, this is only relevant for data
           // validation which is not performed by the schema registry.
+          boolean hasValidationError = false;
           for (var rec : result.getRecords()) {
             if (rec.getSeverity().equals(Severity.ERROR)) {
-              // todo: add metrics?
+              hasValidationError = true;
               log.debug("Invalid YANG validation context for subject {}, ignored for now, {}",
                       schema.getSubject(), rec.getErrorMsg().getMessage());
             }
           }
+          if (hasValidationError) {
+            metrics.recordValidationError(rootModule.getModuleId().getModuleName());
+          }
         }
       }
 
-      Module rootModule = context.getModules().get(context.getModules().size() - 1);
       for (Import imported : rootModule.getImports()) {
         // AH: do we need to resolve imports recursively?! Assuming this check was done on each one
         if (!resolvedReferences.containsKey(imported.getArgStr())) {
@@ -229,7 +211,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
               rootModule,
               schema.getReferences(),
               resolvedReferences,
-              skipCompatibilityCheck);
+              skipCompatibilityCheck,
+              metrics);
+      metrics.recordSchemaCacheMiss(yangSchema.name());
       parsedSchemaCache.put(cacheKey, yangSchema);
       return yangSchema;
     } catch (YangParserException e) {
