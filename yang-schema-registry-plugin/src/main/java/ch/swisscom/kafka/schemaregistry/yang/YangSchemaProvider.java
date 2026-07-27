@@ -23,12 +23,18 @@ import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yangcentral.yangkit.antlr.IfFeatureExpressionLexer;
+import org.yangcentral.yangkit.antlr.IfFeatureExpressionParser;
 import org.yangcentral.yangkit.common.api.exception.Severity;
 import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
@@ -48,17 +54,19 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  // todo: test a proper value or make it configurable
-  private static final int DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE = 50;
-  private static final int DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE = 30;
+  private static final int DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE = 500;
+
+  // todo: an opt to config the number
+  private static final int DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE = 3000;
+
+  // todo: debug this?
+  private static final long DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS = Duration.ofHours(1).toMillis();
 
   private record ReferenceCacheEntry(Module module, String schemaString) {}
 
   private record ReferenceCacheKey(String refName, String refSchema) {}
-  private record ParsedSchemaCacheKey(String schemaString, Map<String, String> resolvedReferences) {}
 
   private final BoundedCache<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
-  private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
   private YangSchemaProviderMetrics metrics;
 
@@ -76,13 +84,13 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     }
     YangStatementImplRegister.registerImpl();
 
-    this.parsedSchemaCache =
-        new BoundedCache<>(DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE, () -> metrics.recordParsedSchemaCacheEviction());
-    this.referenceModuleCache =
-        new BoundedCache<>(DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE, () -> metrics.recordReferenceModuleCacheEviction());
+    this.referenceModuleCache = new BoundedCache<>(
+            DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE,
+            DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS,
+            () -> metrics.recordReferenceModuleCacheEviction());
 
-    this.metrics = new YangSchemaProviderMetrics(parsedSchemaCache::size, referenceModuleCache::size,
-            DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE + DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE);
+    this.metrics = new YangSchemaProviderMetrics(referenceModuleCache::size,
+            DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
 
   @Override
@@ -115,9 +123,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
     log.info(
         "skip-reference-parsing: {}, skip-compatibility-check: {}, " +
-        "parsed-schema-cache.max-size: {}, reference-module-cache.max-size: {}",
+                "reference-module-cache.max-size: {}, module-metrics-cache.max-size: {}",
         skipReferenceParsing, skipCompatibilityCheck,
-        DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE, DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE);
+        DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE, DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
 
   @Override
@@ -130,24 +138,11 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     metrics.recordRequest();
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
-    ParsedSchemaCacheKey cacheKey = buildParsedSchemaCacheKey(schema.getSchema(), resolvedReferences);
-    YangSchema cachedParsedSchema = parsedSchemaCache.get(cacheKey);
-    if (cachedParsedSchema != null) {
-      log.debug("Re-using fully parsed schema from cache for subject {}", schema.getSubject());
-      metrics.recordSchemaCacheHit(cachedParsedSchema.name());
-      return new YangSchema(
-          cachedParsedSchema.canonicalString(),
-          cachedParsedSchema.yangSchemaContext(),
-          cachedParsedSchema.rawSchema(),
-          schema.getReferences(),
-          resolvedReferences,
-          skipCompatibilityCheck,
-          metrics);
-    }
-
-    YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
-
+    long parseStartNanos = System.nanoTime();
+    String metricsModuleName = schema.getSubject();
     try {
+      YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
+
       if (!skipReferenceParsing) {
         for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
           String refName = entry.getKey();
@@ -179,6 +174,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       YangSchemaUtils.parseSchema(schema, context);
 
       Module rootModule = context.getModules().get(context.getModules().size() - 1);
+      metricsModuleName = rootModule.getModuleId().getModuleName();
+      metrics.recordResolvedReferences(metricsModuleName, resolvedReferences.size());
       if (!skipReferenceParsing) {
         var result = context.validate();
         if (!result.isOk()) {
@@ -204,29 +201,24 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           throw new IllegalArgumentException("Unresolved import: " + imported);
         }
       }
-      YangSchema yangSchema =
-          new YangSchema(
-              schema.getSchema(),
-              context,
-              rootModule,
-              schema.getReferences(),
-              resolvedReferences,
-              skipCompatibilityCheck,
-              metrics);
-      metrics.recordSchemaCacheMiss(yangSchema.name());
-      parsedSchemaCache.put(cacheKey, yangSchema);
-      return yangSchema;
+      context.getParseResult().clear();
+
+      return new YangSchema(
+          schema.getSchema(),
+          context,
+          rootModule,
+          schema.getReferences(),
+          resolvedReferences,
+          skipCompatibilityCheck,
+          metrics);
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
       throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);
     } catch (Exception e) {
       log.error("Error parsing Yang Schema", e);
       throw e;
+    } finally {
+      metrics.recordParseLatency(metricsModuleName, System.nanoTime() - parseStartNanos);
     }
-  }
-
-  private static ParsedSchemaCacheKey buildParsedSchemaCacheKey(
-      String schemaString, Map<String, String> resolvedReferences) {
-    return new ParsedSchemaCacheKey(schemaString, Map.copyOf(resolvedReferences));
   }
 }

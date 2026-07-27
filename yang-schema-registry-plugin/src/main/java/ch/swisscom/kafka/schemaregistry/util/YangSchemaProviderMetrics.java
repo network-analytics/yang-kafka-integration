@@ -1,7 +1,6 @@
 package ch.swisscom.kafka.schemaregistry.util;
 
 import java.lang.management.ManagementFactory;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -20,17 +19,9 @@ public class YangSchemaProviderMetrics {
 
   private static final String DOMAIN = "ch.swisscom.kafka.schemaregistry.yang";
 
-  private static final int LINKED_HASH_MAP_DEFAULT_INITIAL_CAPACITY = 16;
-  private static final float LINKED_HASH_MAP_DEFAULT_LOAD_FACTOR = 0.75f;
-  private static final boolean LINKED_HASH_MAP_ACCESS_ORDER = true;
-
   private final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
 
-  private final int moduleMetricsMaxSize;
-
   private final AtomicLong totalRequestCount = new AtomicLong();
-
-  private final AtomicLong parsedSchemaCacheEvictionCount = new AtomicLong();
 
   private final AtomicLong referenceModuleCacheEvictionCount = new AtomicLong();
 
@@ -38,56 +29,38 @@ public class YangSchemaProviderMetrics {
 
   private final AtomicLong validationErrorCount = new AtomicLong();
 
-  private final Map<String, ModuleCacheMetrics> moduleCacheMetrics;
+  private final BoundedCache<String, ModuleCacheMetrics> moduleCacheMetrics;
 
   public YangSchemaProviderMetrics(
-      IntSupplier parsedSchemaCacheSizeSupplier,
       IntSupplier referenceModuleCacheSizeSupplier,
       int moduleMetricsMaxSize) {
-    this.moduleMetricsMaxSize = moduleMetricsMaxSize;
-    this.moduleCacheMetrics = Collections.synchronizedMap(
-        new LinkedHashMap<>(
-            LINKED_HASH_MAP_DEFAULT_INITIAL_CAPACITY,
-            LINKED_HASH_MAP_DEFAULT_LOAD_FACTOR,
-            LINKED_HASH_MAP_ACCESS_ORDER) {
-          @Override
-          protected boolean removeEldestEntry(Map.Entry<String, ModuleCacheMetrics> eldest) {
-            boolean shouldRemove = size() > YangSchemaProviderMetrics.this.moduleMetricsMaxSize;
-            if (shouldRemove) {
-              moduleMetricsEvictionCount.incrementAndGet();
-              unregisterModuleCacheMetrics(eldest.getKey());
-            }
-            return shouldRemove;
-          }
-        });
+    this.moduleCacheMetrics = new BoundedCache<>(
+        moduleMetricsMaxSize, 0L, moduleMetricsEvictionCount::incrementAndGet);
+
     ObjectName name = buildObjectName(DOMAIN + ":type=SchemaCache");
     if (name != null) {
+      registerMBean(name, new GlobalMetrics(referenceModuleCacheSizeSupplier), YangSchemaProviderMetricsMBean.class, false);
+    }
+
+    ObjectName moduleReferenceMetricsName = buildObjectName(DOMAIN + ":type=ModuleReferenceMetrics");
+    if (moduleReferenceMetricsName != null) {
       registerMBean(
-          name,
-          new GlobalMetrics(parsedSchemaCacheSizeSupplier, referenceModuleCacheSizeSupplier),
-          YangSchemaProviderMetricsMBean.class);
+          moduleReferenceMetricsName,
+          new ResolvedReferenceMetrics(),
+          ResolvedReferenceMetricsMXBean.class,
+          true);
     }
   }
 
+
   public void recordRequest() {
     totalRequestCount.incrementAndGet();
-  }
-
-  public void recordParsedSchemaCacheEviction() {
-    parsedSchemaCacheEvictionCount.incrementAndGet();
   }
 
   public void recordReferenceModuleCacheEviction() {
     referenceModuleCacheEvictionCount.incrementAndGet();
   }
 
-  public void recordSchemaCacheHit(String moduleName) {
-    moduleMetrics(moduleName).schemaHitCount.incrementAndGet();
-  }
-
-  public void recordSchemaCacheMiss(String moduleName) {
-    moduleMetrics(moduleName).schemaMissCount.incrementAndGet();
-  }
 
   public void recordReferenceCacheHit(String moduleName) {
     moduleMetrics(moduleName).referenceHitCount.incrementAndGet();
@@ -105,18 +78,24 @@ public class YangSchemaProviderMetrics {
     moduleMetrics(moduleName).compatibilityCheckFailureCount.incrementAndGet();
   }
 
-  private ModuleCacheMetrics moduleMetrics(String moduleName) {
-    return moduleCacheMetrics.computeIfAbsent(moduleName, this::createModuleCacheMetrics);
+  public void recordResolvedReferences(String rootModuleName, int numResolvedReferences) {
+    moduleMetrics(rootModuleName).numResolvedReferences.set(numResolvedReferences);
   }
 
-  private ModuleCacheMetrics createModuleCacheMetrics(String moduleName) {
-    ModuleCacheMetrics metrics = new ModuleCacheMetrics();
-    ObjectName name =
-        buildObjectName(DOMAIN + ":type=ModuleCache,module=" + ObjectName.quote(moduleName));
-    if (name != null) {
-      registerMBean(name, metrics, ModuleCacheMetricsMBean.class);
-    }
-    return metrics;
+  public void recordParseLatency(String moduleName, long durationNanos) {
+    ModuleCacheMetrics moduleCacheMetrics = moduleMetrics(moduleName);
+    moduleCacheMetrics.parseCount.incrementAndGet();
+    moduleCacheMetrics.parseDurationNanos.addAndGet(durationNanos);
+  }
+
+  public void recordCompatibilityCheckLatency(String moduleName, long durationNanos) {
+    ModuleCacheMetrics moduleCacheMetrics = moduleMetrics(moduleName);
+    moduleCacheMetrics.compatibilityCheckCount.incrementAndGet();
+    moduleCacheMetrics.compatibilityCheckDurationNanos.addAndGet(durationNanos);
+  }
+
+  private ModuleCacheMetrics moduleMetrics(String moduleName) {
+    return moduleCacheMetrics.getOrCreate(moduleName, ModuleCacheMetrics::new);
   }
 
   private static ObjectName buildObjectName(String name) {
@@ -128,55 +107,37 @@ public class YangSchemaProviderMetrics {
     }
   }
 
-  private <T> void registerMBean(ObjectName name, T mbean, Class<T> mbeanInterface) {
+  private <T> void registerMBean(ObjectName name, T mbean, Class<T> mbeanInterface, boolean isMXBean) {
     try {
       if (mBeanServer.isRegistered(name)) {
         mBeanServer.unregisterMBean(name);
       }
-      mBeanServer.registerMBean(new StandardMBean(mbean, mbeanInterface), name);
+      mBeanServer.registerMBean(new StandardMBean(mbean, mbeanInterface, isMXBean), name);
     } catch (Exception e) {
       log.warn("Failed to register JMX MBean '{}'", name, e);
     }
   }
 
-  private void unregisterModuleCacheMetrics(String moduleName) {
-    ObjectName name = buildObjectName(DOMAIN + ":type=ModuleCache,module=" + ObjectName.quote(moduleName));
-    if (name == null) {
-      return;
-    }
-    try {
-      if (mBeanServer.isRegistered(name)) {
-        mBeanServer.unregisterMBean(name);
-      }
-    } catch (Exception e) {
-      log.warn("Failed to unregister JMX MBean '{}'", name, e);
-    }
-  }
 
   public interface YangSchemaProviderMetricsMBean {
     long getTotalRequestCount();
 
-    long getParsedSchemaCacheSize();
-
-    long getParsedSchemaCacheEvictionCount();
-
     long getReferenceModuleCacheSize();
 
-
     long getReferenceModuleCacheEvictionCount();
+
+    long getModuleMetricsCacheSize();
 
     long getModuleMetricsEvictionCount();
 
     long getValidationErrorCount();
+
   }
 
   private class GlobalMetrics implements YangSchemaProviderMetricsMBean {
-    private final IntSupplier parsedSchemaCacheSizeSupplier;
     private final IntSupplier referenceModuleCacheSizeSupplier;
 
-    GlobalMetrics(
-        IntSupplier parsedSchemaCacheSizeSupplier, IntSupplier referenceModuleCacheSizeSupplier) {
-      this.parsedSchemaCacheSizeSupplier = parsedSchemaCacheSizeSupplier;
+    GlobalMetrics(IntSupplier referenceModuleCacheSizeSupplier) {
       this.referenceModuleCacheSizeSupplier = referenceModuleCacheSizeSupplier;
     }
 
@@ -186,24 +147,18 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
-    public long getParsedSchemaCacheSize() {
-      return parsedSchemaCacheSizeSupplier.getAsInt();
-    }
-
-    @Override
-    public long getParsedSchemaCacheEvictionCount() {
-      return parsedSchemaCacheEvictionCount.get();
-    }
-
-    @Override
     public long getReferenceModuleCacheSize() {
       return referenceModuleCacheSizeSupplier.getAsInt();
     }
 
-
     @Override
     public long getReferenceModuleCacheEvictionCount() {
       return referenceModuleCacheEvictionCount.get();
+    }
+
+    @Override
+    public long getModuleMetricsCacheSize() {
+      return moduleCacheMetrics.size();
     }
 
     @Override
@@ -215,13 +170,10 @@ public class YangSchemaProviderMetrics {
     public long getValidationErrorCount() {
       return validationErrorCount.get();
     }
+
   }
 
   public interface ModuleCacheMetricsMBean {
-    long getSchemaHitCount();
-
-    long getSchemaMissCount();
-
     long getReferenceHitCount();
 
     long getReferenceMissCount();
@@ -229,25 +181,89 @@ public class YangSchemaProviderMetrics {
     long getValidationErrorCount();
 
     long getCompatibilityCheckFailureCount();
+
+    long getNumResolvedReferences();
+
+    long getParseCount();
+
+    long getParseDurationNanos();
+
+    long getCompatibilityCheckCount();
+
+    long getCompatibilityCheckDurationNanos();
+  }
+
+  public interface ResolvedReferenceMetricsMXBean {
+    Map<String, Long> getNumResolvedReferencesByModule();
+
+    Map<String, Long> getReferenceHitCountByModule();
+
+    Map<String, Long> getReferenceMissCountByModule();
+
+    Map<String, Long> getParseCountByModule();
+
+    Map<String, Long> getParseDurationNanosByModule();
+
+    Map<String, Long> getCompatibilityCheckCountByModule();
+
+    Map<String, Long> getCompatibilityCheckDurationNanosByModule();
+  }
+
+  private class ResolvedReferenceMetrics implements ResolvedReferenceMetricsMXBean {
+    @Override
+    public Map<String, Long> getNumResolvedReferencesByModule() {
+      return snapshot(m -> m.numResolvedReferences.get());
+    }
+
+    @Override
+    public Map<String, Long> getReferenceHitCountByModule() {
+      return snapshot(m -> m.referenceHitCount.get());
+    }
+
+    @Override
+    public Map<String, Long> getReferenceMissCountByModule() {
+      return snapshot(m -> m.referenceMissCount.get());
+    }
+
+    @Override
+    public Map<String, Long> getParseCountByModule() {
+      return snapshot(m -> m.parseCount.get());
+    }
+
+    @Override
+    public Map<String, Long> getParseDurationNanosByModule() {
+      return snapshot(m -> m.parseDurationNanos.get());
+    }
+
+    @Override
+    public Map<String, Long> getCompatibilityCheckCountByModule() {
+      return snapshot(m -> m.compatibilityCheckCount.get());
+    }
+
+    @Override
+    public Map<String, Long> getCompatibilityCheckDurationNanosByModule() {
+      return snapshot(m -> m.compatibilityCheckDurationNanos.get());
+    }
+
+    private Map<String, Long> snapshot(java.util.function.Function<ModuleCacheMetrics, Long> valueExtractor) {
+      Map<String, Long> snapshot = new LinkedHashMap<>();
+      for (Map.Entry<String, ModuleCacheMetrics> entry : moduleCacheMetrics.asMap().entrySet()) {
+        snapshot.put(entry.getKey(), valueExtractor.apply(entry.getValue()));
+      }
+      return snapshot;
+    }
   }
 
   private static class ModuleCacheMetrics implements ModuleCacheMetricsMBean {
-    private final AtomicLong schemaHitCount = new AtomicLong();
-    private final AtomicLong schemaMissCount = new AtomicLong();
     private final AtomicLong referenceHitCount = new AtomicLong();
     private final AtomicLong referenceMissCount = new AtomicLong();
     private final AtomicLong validationErrorCount = new AtomicLong();
     private final AtomicLong compatibilityCheckFailureCount = new AtomicLong();
-
-    @Override
-    public long getSchemaHitCount() {
-      return schemaHitCount.get();
-    }
-
-    @Override
-    public long getSchemaMissCount() {
-      return schemaMissCount.get();
-    }
+    private final AtomicLong numResolvedReferences = new AtomicLong();
+    private final AtomicLong parseCount = new AtomicLong();
+    private final AtomicLong parseDurationNanos = new AtomicLong();
+    private final AtomicLong compatibilityCheckCount = new AtomicLong();
+    private final AtomicLong compatibilityCheckDurationNanos = new AtomicLong();
 
     @Override
     public long getReferenceHitCount() {
@@ -267,6 +283,31 @@ public class YangSchemaProviderMetrics {
     @Override
     public long getCompatibilityCheckFailureCount() {
       return compatibilityCheckFailureCount.get();
+    }
+
+    @Override
+    public long getNumResolvedReferences() {
+      return numResolvedReferences.get();
+    }
+
+    @Override
+    public long getParseCount() {
+      return parseCount.get();
+    }
+
+    @Override
+    public long getParseDurationNanos() {
+      return parseDurationNanos.get();
+    }
+
+    @Override
+    public long getCompatibilityCheckCount() {
+      return compatibilityCheckCount.get();
+    }
+
+    @Override
+    public long getCompatibilityCheckDurationNanos() {
+      return compatibilityCheckDurationNanos.get();
     }
   }
 }

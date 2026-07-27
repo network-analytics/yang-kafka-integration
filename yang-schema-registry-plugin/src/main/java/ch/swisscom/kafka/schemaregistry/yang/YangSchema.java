@@ -243,9 +243,11 @@ public class YangSchema implements ParsedSchema {
     YangComparator comparator =
         new YangComparator(previousYangSchema.yangSchemaContext(), this.context);
 
+    long compatibilityCheckStartNanos = System.nanoTime();
     try {
       CompareType compareType = CompareType.COMPATIBLE_CHECK;
       List<YangCompareResult> compareResults = comparator.compare(compareType, null);
+      recordCompatibilityCheckLatency(System.nanoTime() - compatibilityCheckStartNanos);
       boolean nonBackwardCompatible =
           compareResults.stream()
               .map(x -> x.getCompatibilityInfo().getCompatibility())
@@ -265,6 +267,7 @@ public class YangSchema implements ParsedSchema {
       }
       return ret;
     } catch (Exception e) {
+      recordCompatibilityCheckLatency(System.nanoTime() - compatibilityCheckStartNanos);
       log.error("Yang Schema Comparator exception", e);
       recordCompatibilityCheckFailure();
       return Collections.singletonList("Incompatible schema types");
@@ -274,6 +277,12 @@ public class YangSchema implements ParsedSchema {
   private void recordCompatibilityCheckFailure() {
     if (metrics != null) {
       metrics.recordCompatibilityCheckFailure(this.name());
+    }
+  }
+
+  private void recordCompatibilityCheckLatency(long durationNanos) {
+    if (metrics != null) {
+      metrics.recordCompatibilityCheckLatency(this.name(), durationNanos);
     }
   }
 

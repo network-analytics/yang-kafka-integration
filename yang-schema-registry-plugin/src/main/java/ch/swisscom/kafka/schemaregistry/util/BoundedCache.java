@@ -1,49 +1,52 @@
 package ch.swisscom.kafka.schemaregistry.util;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public final class BoundedCache<K, V> {
 
-  private static final int DEFAULT_INITIAL_CAPACITY = 16;
-  private static final float DEFAULT_LOAD_FACTOR = 0.75f;
-  private static final boolean ACCESS_ORDER = true; // LRU (Least Recently Used) order
+  private final Cache<K, V> cache;
 
-  private final int maxSize;
-  private final Runnable onEviction;
-  private final Map<K, V> map;
-
-  public BoundedCache(int maxSize) {
-    this(maxSize, null);
-  }
-
-  public BoundedCache(int maxSize, Runnable onEviction) {
-    this.maxSize = maxSize;
-    this.onEviction = onEviction;
-    this.map = Collections.synchronizedMap(
-        new LinkedHashMap<>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, ACCESS_ORDER) {
-          @Override
-          protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-            boolean shouldRemove = size() > BoundedCache.this.maxSize;
-            if (shouldRemove && BoundedCache.this.onEviction != null) {
-              BoundedCache.this.onEviction.run();
-            }
-            return shouldRemove;
-          }
-        });
+  public BoundedCache(int maxSize, long idleTimeoutMillis, Runnable onEviction) {
+    CacheBuilder<Object, Object> builder = CacheBuilder.newBuilder().maximumSize(maxSize);
+    if (idleTimeoutMillis > 0) {
+      builder.expireAfterAccess(idleTimeoutMillis, TimeUnit.MILLISECONDS);
+    }
+    if (onEviction != null) {
+      RemovalListener<K, V> removalListener = notification -> onEviction.run();
+      this.cache = builder.removalListener(removalListener).build();
+    } else {
+      this.cache = builder.build();
+    }
   }
 
   public V get(K key) {
-    return map.get(key);
+    return cache.getIfPresent(key);
   }
 
   public void put(K key, V value) {
-    map.put(key, value);
+    cache.put(key, value);
+  }
+
+  public V getOrCreate(K key, Supplier<V> supplier) {
+    try {
+      return cache.get(key, supplier::get);
+    } catch (ExecutionException e) {
+      throw new IllegalStateException("Failed to create cache entry for key " + key, e);
+    }
+  }
+
+  public ConcurrentMap<K, V> asMap() {
+    return cache.asMap();
   }
 
   public int size() {
-    return map.size();
+    cache.cleanUp();
+    return (int) cache.size();
   }
 }
-
