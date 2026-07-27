@@ -24,17 +24,14 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
-import org.antlr.v4.runtime.CharStreams;
-import org.antlr.v4.runtime.CommonTokenStream;
+import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.yangcentral.yangkit.antlr.IfFeatureExpressionLexer;
-import org.yangcentral.yangkit.antlr.IfFeatureExpressionParser;
 import org.yangcentral.yangkit.common.api.exception.Severity;
 import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
@@ -56,6 +53,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   private static final int DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE = 500;
 
+  private static final int DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE = 1000;
+
   // todo: an opt to config the number
   private static final int DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE = 3000;
 
@@ -66,7 +65,11 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   private record ReferenceCacheKey(String refName, String refSchema) {}
 
+  private record ParsedSchemaCacheKey(String subject, String schemaString, List<SchemaReference> references) {}
+
   private final BoundedCache<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
+
+  private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
   private YangSchemaProviderMetrics metrics;
 
@@ -89,7 +92,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS,
             () -> metrics.recordReferenceModuleCacheEviction());
 
-    this.metrics = new YangSchemaProviderMetrics(referenceModuleCache::size,
+    this.parsedSchemaCache = new BoundedCache<>(
+            DEFAULT_PARSED_SCHEMA_CACHE_MAX_SIZE,
+            DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS,
+            () -> metrics.recordParsedSchemaCacheEviction());
+
+    this.metrics = new YangSchemaProviderMetrics(
+            referenceModuleCache::size,
+            parsedSchemaCache::size,
             DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
 
@@ -136,6 +146,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   @Override
   public ParsedSchema parseSchemaOrElseThrow(Schema schema, boolean isNew, boolean normalize) {
     metrics.recordRequest();
+
+    ParsedSchemaCacheKey cacheKey = new ParsedSchemaCacheKey(schema.getSubject(), schema.getSchema(), schema.getReferences());
+    YangSchema cachedSchema = parsedSchemaCache.get(cacheKey);
+    if (cachedSchema != null) {
+      log.debug("Re-using cached parsed schema: {}", schema.getSubject());
+      return cachedSchema;
+    }
+
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     long parseStartNanos = System.nanoTime();
@@ -203,7 +221,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       context.getParseResult().clear();
 
-      return new YangSchema(
+      YangSchema parsedYangSchema = new YangSchema(
           schema.getSchema(),
           context,
           rootModule,
@@ -211,6 +229,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           resolvedReferences,
           skipCompatibilityCheck,
           metrics);
+      parsedSchemaCache.put(cacheKey, parsedYangSchema);
+
+      return parsedYangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
       throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);

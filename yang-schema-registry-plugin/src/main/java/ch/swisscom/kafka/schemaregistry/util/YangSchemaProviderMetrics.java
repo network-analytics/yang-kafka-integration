@@ -25,6 +25,8 @@ public class YangSchemaProviderMetrics {
 
   private final AtomicLong referenceModuleCacheEvictionCount = new AtomicLong();
 
+  private final AtomicLong parsedSchemaCacheEvictionCount = new AtomicLong();
+
   private final AtomicLong moduleMetricsEvictionCount = new AtomicLong();
 
   private final AtomicLong validationErrorCount = new AtomicLong();
@@ -33,13 +35,16 @@ public class YangSchemaProviderMetrics {
 
   public YangSchemaProviderMetrics(
       IntSupplier referenceModuleCacheSizeSupplier,
+      IntSupplier parsedSchemaCacheSizeSupplier,
       int moduleMetricsMaxSize) {
     this.moduleCacheMetrics = new BoundedCache<>(
         moduleMetricsMaxSize, 0L, moduleMetricsEvictionCount::incrementAndGet);
 
     ObjectName name = buildObjectName(DOMAIN + ":type=SchemaCache");
     if (name != null) {
-      registerMBean(name, new GlobalMetrics(referenceModuleCacheSizeSupplier), YangSchemaProviderMetricsMBean.class, false);
+      registerMBean(name,
+              new GlobalMetrics(referenceModuleCacheSizeSupplier, parsedSchemaCacheSizeSupplier),
+              YangSchemaProviderMetricsMBean.class, false);
     }
 
     ObjectName moduleReferenceMetricsName = buildObjectName(DOMAIN + ":type=ModuleReferenceMetrics");
@@ -61,6 +66,9 @@ public class YangSchemaProviderMetrics {
     referenceModuleCacheEvictionCount.incrementAndGet();
   }
 
+  public void recordParsedSchemaCacheEviction() {
+    parsedSchemaCacheEvictionCount.incrementAndGet();
+  }
 
   public void recordReferenceCacheHit(String moduleName) {
     moduleMetrics(moduleName).referenceHitCount.incrementAndGet();
@@ -126,6 +134,10 @@ public class YangSchemaProviderMetrics {
 
     long getReferenceModuleCacheEvictionCount();
 
+    long getParsedSchemaCacheSize();
+
+    long getParsedSchemaCacheEvictionCount();
+
     long getModuleMetricsCacheSize();
 
     long getModuleMetricsEvictionCount();
@@ -136,9 +148,11 @@ public class YangSchemaProviderMetrics {
 
   private class GlobalMetrics implements YangSchemaProviderMetricsMBean {
     private final IntSupplier referenceModuleCacheSizeSupplier;
+    private final IntSupplier parsedSchemaCacheSizeSupplier;
 
-    GlobalMetrics(IntSupplier referenceModuleCacheSizeSupplier) {
+    GlobalMetrics(IntSupplier referenceModuleCacheSizeSupplier, IntSupplier parsedSchemaCacheSizeSupplier) {
       this.referenceModuleCacheSizeSupplier = referenceModuleCacheSizeSupplier;
+      this.parsedSchemaCacheSizeSupplier = parsedSchemaCacheSizeSupplier;
     }
 
     @Override
@@ -154,6 +168,16 @@ public class YangSchemaProviderMetrics {
     @Override
     public long getReferenceModuleCacheEvictionCount() {
       return referenceModuleCacheEvictionCount.get();
+    }
+
+    @Override
+    public long getParsedSchemaCacheSize() {
+      return parsedSchemaCacheSizeSupplier.getAsInt();
+    }
+
+    @Override
+    public long getParsedSchemaCacheEvictionCount() {
+      return parsedSchemaCacheEvictionCount.get();
     }
 
     @Override
@@ -311,4 +335,3 @@ public class YangSchemaProviderMetrics {
     }
   }
 }
-
