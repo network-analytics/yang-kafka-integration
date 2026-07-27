@@ -38,8 +38,17 @@ import org.yangcentral.yangkit.register.YangStatementRegister;
 public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
+
+  public static final String YANG_HOTFIX_SKIP_REFERENCE_PARSING =
+      "yang.hotfix.skip-reference-parsing";
+  public static final String YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK =
+      "yang.hotfix.skip-compatibility-check";
+
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
+
+  private boolean skipReferenceParsing = false;
+  private boolean skipCompatibilityCheck = false;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -72,6 +81,21 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     } catch (Exception e) {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
+
+    this.skipReferenceParsing =
+        Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_REFERENCE_PARSING, "false"));
+    this.skipCompatibilityCheck =
+        Boolean.parseBoolean(System.getProperty(YANG_HOTFIX_SKIP_COMPATIBILITY_CHECK, "false"));
+
+    if (skipReferenceParsing && !skipCompatibilityCheck) {
+      log.debug("[hotfix] skip-reference-parsing=true forces skip-compatibility-check=true");
+      this.skipCompatibilityCheck = true;
+    }
+
+    log.info(
+        "[hotfix] skip-reference-parsing: {}, skip-compatibility-check: {}",
+        skipReferenceParsing,
+        skipCompatibilityCheck);
   }
 
   @Override
@@ -85,21 +109,25 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
     try {
-      // Parse first resolved references
-      for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
-        YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
+      if (!skipReferenceParsing) {
+        for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
+          YangSchemaUtils.parseYangString(entry.getKey(), entry.getValue(), context);
+        }
       }
       YangSchemaUtils.parseSchema(schema, context);
-      var result = context.validate();
-      if (!result.isOk()) {
-        // YANGKit is not able to have complete validation context, this is only relevant for data
-        // validation which is not performed by the schema registry.
-        for (var record : result.getRecords()) {
-          if (record.getSeverity().equals(Severity.ERROR)) {
-            log.debug(
-                "Invalid YANG validation context for subject {}, ignored for now, {}",
-                schema.getSubject(),
-                record.getErrorMsg().getMessage());
+
+      if (!skipReferenceParsing) {
+        var result = context.validate();
+        if (!result.isOk()) {
+          // YANGKit is not able to have complete validation context, this is only relevant for data
+          // validation which is not performed by the schema registry.
+          for (var record : result.getRecords()) {
+            if (record.getSeverity().equals(Severity.ERROR)) {
+              log.debug(
+                  "Invalid YANG validation context for subject {}, ignored for now, {}",
+                  schema.getSubject(),
+                  record.getErrorMsg().getMessage());
+            }
           }
         }
       }
@@ -112,7 +140,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       YangSchema yangSchema =
           new YangSchema(
-              schema.getSchema(), context, rootModule, schema.getReferences(), resolvedReferences);
+              schema.getSchema(),
+              context,
+              rootModule,
+              schema.getReferences(),
+              resolvedReferences,
+              skipCompatibilityCheck);
       return yangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
