@@ -58,14 +58,10 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   // todo: debug this?
   private static final long DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS = Duration.ofHours(1).toMillis();
 
-  private record ReferenceCacheEntry(Module module, String schemaString) {}
-
   private record ReferenceCacheKey(String refName, String refSchema) {}
+  private final BoundedCache<ReferenceCacheKey, Module> referenceCache;
 
   private record ParsedSchemaCacheKey(String subject, String schemaString, List<SchemaReference> references) {}
-
-  private final BoundedCache<ReferenceCacheKey, ReferenceCacheEntry> referenceModuleCache;
-
   private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
   private YangSchemaProviderMetrics metrics;
@@ -81,7 +77,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     }
     YangStatementImplRegister.registerImpl();
 
-    this.referenceModuleCache = new BoundedCache<>(
+    this.referenceCache = new BoundedCache<>(
             DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE,
             DEFAULT_CACHE_IDLE_TIMEOUT_MILLIS,
             () -> metrics.recordReferenceModuleCacheEviction());
@@ -92,7 +88,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             () -> metrics.recordParsedSchemaCacheEviction());
 
     this.metrics = new YangSchemaProviderMetrics(
-            referenceModuleCache::size,
+            referenceCache::size,
             parsedSchemaCache::size,
             DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
@@ -149,23 +145,22 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         String refSchema = entry.getValue();
 
         ReferenceCacheKey referenceCacheKey = new ReferenceCacheKey(refName, refSchema);
-        ReferenceCacheEntry cached = referenceModuleCache.get(referenceCacheKey);
+        Module cachedModule = referenceCache.get(referenceCacheKey);
 
-        if (cached != null) {
+        if (cachedModule != null) {
           log.debug("Re-using cached reference module: {}, refSchema: {}", refName, refSchema);
           metrics.recordReferenceCacheHit(refName);
-          context.addModule(cached.module());
+          context.addModule(cachedModule);
         } else {
           log.debug("Parsing module from raw, and caching it: {}, refSchema: {}", refName, refSchema);
           metrics.recordReferenceCacheMiss(refName);
           Module parsedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
 
           if (parsedModule != null) {
-            referenceModuleCache.put(referenceCacheKey, new ReferenceCacheEntry(parsedModule, refSchema));
+            referenceCache.put(referenceCacheKey, parsedModule);
           }
         }
       }
-
 
       // Parse main schema
       Module rootModule = YangSchemaUtils.parseSchema(schema, context);
