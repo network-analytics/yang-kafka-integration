@@ -67,8 +67,6 @@ public class YangSchema implements ParsedSchema {
   private static final int NO_HASHCODE = Integer.MIN_VALUE;
   private transient int hashCode = NO_HASHCODE;
 
-  private final boolean skipCompatibilityCheck;
-
   private final YangSchemaProviderMetrics metrics;
 
   public YangSchema(
@@ -80,7 +78,6 @@ public class YangSchema implements ParsedSchema {
       Map<String, String> resolvedReferences,
       Metadata metadata,
       RuleSet ruleSet,
-      boolean skipCompatibilityCheck,
       YangSchemaProviderMetrics metrics) {
     this.schemaString = schemaString;
     this.version = version;
@@ -91,7 +88,6 @@ public class YangSchema implements ParsedSchema {
     this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
     this.metadata = metadata;
     this.ruleSet = ruleSet;
-    this.skipCompatibilityCheck = skipCompatibilityCheck;
     this.metrics = metrics;
   }
 
@@ -101,7 +97,6 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
-      boolean skipCompatibilityCheck,
       YangSchemaProviderMetrics metrics) {
     this(
         schemaString,
@@ -112,7 +107,6 @@ public class YangSchema implements ParsedSchema {
         resolvedReferences,
         null,
         null,
-        skipCompatibilityCheck,
         metrics);
   }
 
@@ -122,7 +116,7 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, false, null);
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, null);
   }
 
   @Override
@@ -171,7 +165,6 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.skipCompatibilityCheck,
         this.metrics);
   }
 
@@ -186,7 +179,6 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.skipCompatibilityCheck,
         this.metrics);
   }
 
@@ -201,7 +193,6 @@ public class YangSchema implements ParsedSchema {
         this.resolvedReferences,
         metadata,
         ruleSet,
-        this.skipCompatibilityCheck,
         this.metrics);
   }
 
@@ -230,10 +221,6 @@ public class YangSchema implements ParsedSchema {
 
   @Override
   public List<String> isBackwardCompatible(ParsedSchema previousSchema) {
-    if (skipCompatibilityCheck) {
-      log.debug("[hotfix] skipping backward compatibility check for {}", this.name());
-      return Collections.emptyList();
-    }
     log.debug("Checking if schema is backward compatible: {} and {}", this, previousSchema);
     if (!(previousSchema instanceof YangSchema)) {
       recordCompatibilityCheckFailure();

@@ -45,9 +45,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
 
-  public static final String SKIP_REFERENCE_PARSING = "yang.hotfix.skip-reference-parsing";
-  public static final String SKIP_COMPATIBILITY_CHECK = "yang.hotfix.skip-compatibility-check";
-
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
@@ -72,9 +69,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
   private YangSchemaProviderMetrics metrics;
-
-  private boolean skipReferenceParsing = false;
-  private boolean skipCompatibilityCheck = false;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -123,18 +117,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
 
-    this.skipReferenceParsing = Boolean.parseBoolean(System.getProperty(SKIP_REFERENCE_PARSING, "false"));
-    this.skipCompatibilityCheck = Boolean.parseBoolean(System.getProperty(SKIP_COMPATIBILITY_CHECK, "false"));
-
-    if (skipReferenceParsing && !skipCompatibilityCheck) {
-      log.warn("[hotfix] skip-reference-parsing=true forces skip-compatibility-check=true");
-      this.skipCompatibilityCheck = true;
-    }
-
-    log.info(
-        "skip-reference-parsing: {}, skip-compatibility-check: {}, " +
-                "reference-module-cache.max-size: {}, module-metrics-cache.max-size: {}",
-        skipReferenceParsing, skipCompatibilityCheck,
+    log.info("reference-module-cache.max-size: {}, module-metrics-cache.max-size: {}",
         DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE, DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
 
@@ -161,50 +144,48 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     try {
       YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
 
-      if (!skipReferenceParsing) {
-        for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
-          String refName = entry.getKey();
-          String refSchema = entry.getValue();
+      for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
+        String refName = entry.getKey();
+        String refSchema = entry.getValue();
 
-          ReferenceCacheKey referenceCacheKey = new ReferenceCacheKey(refName, refSchema);
-          ReferenceCacheEntry cached = referenceModuleCache.get(referenceCacheKey);
+        ReferenceCacheKey referenceCacheKey = new ReferenceCacheKey(refName, refSchema);
+        ReferenceCacheEntry cached = referenceModuleCache.get(referenceCacheKey);
 
-          if (cached != null) {
-            log.debug("Re-using cached reference module: {}, refSchema: {}", refName, refSchema);
-            metrics.recordReferenceCacheHit(refName);
-            context.addModule(cached.module());
-          } else {
-            log.debug("Parsing module from raw, and caching it: {}, refSchema: {}", refName, refSchema);
-            metrics.recordReferenceCacheMiss(refName);
-            Module parsedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
+        if (cached != null) {
+          log.debug("Re-using cached reference module: {}, refSchema: {}", refName, refSchema);
+          metrics.recordReferenceCacheHit(refName);
+          context.addModule(cached.module());
+        } else {
+          log.debug("Parsing module from raw, and caching it: {}, refSchema: {}", refName, refSchema);
+          metrics.recordReferenceCacheMiss(refName);
+          Module parsedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
 
-            if (parsedModule != null) {
-              referenceModuleCache.put(referenceCacheKey, new ReferenceCacheEntry(parsedModule, refSchema));
-            }
+          if (parsedModule != null) {
+            referenceModuleCache.put(referenceCacheKey, new ReferenceCacheEntry(parsedModule, refSchema));
           }
         }
       }
+
 
       // Parse main schema
       Module rootModule = YangSchemaUtils.parseSchema(schema, context);
       metricsModuleName = rootModule.getModuleId().getModuleName();
       metrics.recordResolvedReferences(metricsModuleName, resolvedReferences.size());
-      if (!skipReferenceParsing) {
-        var result = context.validate();
-        if (!result.isOk()) {
-          // YANGKit is not able to have complete validation context, this is only relevant for data
-          // validation which is not performed by the schema registry.
-          boolean hasValidationError = false;
-          for (var rec : result.getRecords()) {
-            if (rec.getSeverity().equals(Severity.ERROR)) {
-              hasValidationError = true;
-              log.debug("Invalid YANG validation context for subject {}, ignored for now, {}",
-                      schema.getSubject(), rec.getErrorMsg().getMessage());
-            }
+
+      var result = context.validate();
+      if (!result.isOk()) {
+        // YANGKit is not able to have complete validation context, this is only relevant for data
+        // validation which is not performed by the schema registry.
+        boolean hasValidationError = false;
+        for (var rec : result.getRecords()) {
+          if (rec.getSeverity().equals(Severity.ERROR)) {
+            hasValidationError = true;
+            log.debug("Invalid YANG validation context for subject {}, ignored for now, {}",
+                    schema.getSubject(), rec.getErrorMsg().getMessage());
           }
-          if (hasValidationError) {
-            metrics.recordValidationError(rootModule.getModuleId().getModuleName());
-          }
+        }
+        if (hasValidationError) {
+          metrics.recordValidationError(rootModule.getModuleId().getModuleName());
         }
       }
 
@@ -222,7 +203,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           rootModule,
           schema.getReferences(),
           resolvedReferences,
-          skipCompatibilityCheck,
           metrics);
       parsedSchemaCache.put(cacheKey, parsedYangSchema);
 
