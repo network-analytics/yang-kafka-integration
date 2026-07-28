@@ -176,12 +176,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           } else {
             log.debug("Parsing module from raw, and caching it: {}, refSchema: {}", refName, refSchema);
             metrics.recordReferenceCacheMiss(refName);
-            int moduleCountBefore = context.getModules().size();
-            YangSchemaUtils.parseYangString(refName, refSchema, context);
+            Module parsedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
 
-            // The newly parsed module is the last one just added in previous parseYangString() step.
-            if (context.getModules().size() > moduleCountBefore) {
-              Module parsedModule = context.getModules().get(context.getModules().size() - 1);
+            if (parsedModule != null) {
               referenceModuleCache.put(referenceCacheKey, new ReferenceCacheEntry(parsedModule, refSchema));
             }
           }
@@ -189,9 +186,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
 
       // Parse main schema
-      YangSchemaUtils.parseSchema(schema, context);
-
-      Module rootModule = context.getModules().get(context.getModules().size() - 1);
+      Module rootModule = YangSchemaUtils.parseSchema(schema, context);
       metricsModuleName = rootModule.getModuleId().getModuleName();
       metrics.recordResolvedReferences(metricsModuleName, resolvedReferences.size());
       if (!skipReferenceParsing) {

@@ -30,7 +30,7 @@ public class YangSchemaUtils {
 
   private static final YangParser YANG_PARSER = new YangParser();
 
-  public static void parseYangString(String name, String schemaString, YangSchemaContext context)
+  public static Module parseYangString(String name, String schemaString, YangSchemaContext context)
       throws YangParserException {
 
     YangParserEnv yangParserEnv = new YangParserEnv();
@@ -38,22 +38,25 @@ public class YangSchemaUtils {
     yangParserEnv.setFilename(name);
     yangParserEnv.setCurPos(0);
     List<YangElement> elementList = YANG_PARSER.parseYang(schemaString, yangParserEnv);
-    // Add the yang module to the context;
+    Module parsedModule = null;
     for (YangElement element : elementList) {
       if (element instanceof YangStatement) {
-        context.addModule((Module) element);
+        if (parsedModule != null) {
+          // we should have only one top-level YangStatement. Throw exception in case upstream (yangkit) logic change.
+          throw new YangParserException(null, null, "multiple top-level YangStatements found: " + name);
+        }
+        parsedModule = (Module) element;
+        context.addModule(parsedModule);
       }
     }
-    String moduleName = name;
-    if (!context.getModules().isEmpty()) {
-      moduleName = context.getModules().get(0).getModuleId().getModuleName();
-    }
+    String moduleName = parsedModule != null ? parsedModule.getModuleId().getModuleName() : name;
     context.getParseResult().put(moduleName, elementList);
+    return parsedModule;
   }
 
-  public static void parseSchema(Schema schema, YangSchemaContext context)
+  public static Module parseSchema(Schema schema, YangSchemaContext context)
       throws YangParserException {
-    parseYangString(schema.getSubject(), schema.getSchema(), context);
+    return parseYangString(schema.getSubject(), schema.getSchema(), context);
   }
 
   public static YangSchema copyOf(YangSchema schema) {
