@@ -3,6 +3,7 @@ package ch.swisscom.kafka.schemaregistry.util;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -36,9 +37,16 @@ public final class BoundedCache<K, V> {
   public V getOrCreate(K key, Supplier<V> supplier) {
     try {
       return cache.get(key, supplier::get);
-    } catch (ExecutionException e) {
-      throw new IllegalStateException("Failed to create cache entry for key " + key, e);
+    } catch (ExecutionException | UncheckedExecutionException e) {
+      throw rethrow(key, e.getCause());
     }
+  }
+
+  private RuntimeException rethrow(K key, Throwable cause) {
+    if (cause instanceof RuntimeException) {
+      return (RuntimeException) cause;
+    }
+    return new IllegalStateException("Failed to create cache entry for key " + key, cause);
   }
 
   public ConcurrentMap<K, V> asMap() {

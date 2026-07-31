@@ -26,6 +26,8 @@ import java.net.URL;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import org.dom4j.Document;
@@ -112,9 +114,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     } catch (Exception e) {
       throw new IllegalArgumentException("Couldn't load comparator rules", e);
     }
-
-    log.info("reference-module-cache.max-size: {}, module-metrics-cache.max-size: {}",
-        DEFAULT_REFERENCE_MODULE_CACHE_MAX_SIZE, DEFAULT_MODULE_METRICS_CACHE_MAX_SIZE);
   }
 
   @Override
@@ -127,16 +126,26 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     metrics.recordRequest();
 
     ParsedSchemaCacheKey cacheKey = new ParsedSchemaCacheKey(schema.getSubject(), schema.getSchema(), schema.getReferences());
-    YangSchema cachedSchema = parsedSchemaCache.get(cacheKey);
-    if (cachedSchema != null) {
-      log.debug("Re-using cached parsed schema: {}", schema.getSubject());
-      return cachedSchema;
-    }
 
+    AtomicBoolean cacheHit = new AtomicBoolean(true);
+    AtomicReference<String> metricsKeyRef = new AtomicReference<>(schema.getSubject());
+    long parseStartNanos = System.nanoTime();
+    YangSchema parsedYangSchema = parsedSchemaCache.getOrCreate(cacheKey, () -> {
+      cacheHit.set(false);
+      return parseYangSchema(schema, metricsKeyRef);
+    });
+
+    if (cacheHit.get()) {
+      log.debug("Re-using cached parsed schema: {}", schema.getSubject());
+      metrics.recordParsedSchemaCacheHit(parsedYangSchema.name());
+    }
+    metrics.recordParseLatency(metricsKeyRef.get(), System.nanoTime() - parseStartNanos);
+    return parsedYangSchema;
+  }
+
+  private YangSchema parseYangSchema(Schema schema, AtomicReference<String> metricsKeyRef) {
     Map<String, String> resolvedReferences = resolveReferences(schema);
 
-    long parseStartNanos = System.nanoTime();
-    String metricsModuleName = schema.getSubject();
     try {
       YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
 
@@ -164,7 +173,10 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
       // Parse main schema
       Module rootModule = YangSchemaUtils.parseSchema(schema, context);
-      metricsModuleName = rootModule.getModuleId().getModuleName();
+      String metricsModuleName = rootModule.getModuleId().getModuleName();
+      metricsKeyRef.set(metricsModuleName);
+
+      metrics.recordParsedSchemaCacheMiss(metricsModuleName);
       metrics.recordResolvedReferences(metricsModuleName, resolvedReferences.size());
 
       var result = context.validate();
@@ -180,7 +192,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           }
         }
         if (hasValidationError) {
-          metrics.recordValidationError(rootModule.getModuleId().getModuleName());
+          // TODO: incompatible if a wrong schema e.g. default value, ignored, and cached.
+          metrics.recordValidationError(metricsModuleName);
         }
       }
 
@@ -192,24 +205,19 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       context.getParseResult().clear();
 
-      YangSchema parsedYangSchema = new YangSchema(
+      return new YangSchema(
           schema.getSchema(),
           context,
           rootModule,
           schema.getReferences(),
           resolvedReferences,
           metrics);
-      parsedSchemaCache.put(cacheKey, parsedYangSchema);
-
-      return parsedYangSchema;
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
       throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);
     } catch (Exception e) {
       log.error("Error parsing Yang Schema", e);
       throw e;
-    } finally {
-      metrics.recordParseLatency(metricsModuleName, System.nanoTime() - parseStartNanos);
     }
   }
 }

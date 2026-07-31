@@ -19,13 +19,25 @@ public class YangSchemaProviderMetrics {
 
   private static final String DOMAIN = "ch.swisscom.kafka.schemaregistry.yang";
 
+  public static final String METRICS_PER_MODULE_PROPERTY = "yang.monitor.metrics-per-module";
+
   private final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+  private final boolean perModuleMetricsEnabled;
 
   private final AtomicLong totalRequestCount = new AtomicLong();
 
   private final AtomicLong referenceModuleCacheEvictionCount = new AtomicLong();
 
   private final AtomicLong parsedSchemaCacheEvictionCount = new AtomicLong();
+
+  private final AtomicLong parsedSchemaCacheHitCount = new AtomicLong();
+
+  private final AtomicLong parsedSchemaCacheMissCount = new AtomicLong();
+
+  private final AtomicLong referenceModuleCacheHitCount = new AtomicLong();
+
+  private final AtomicLong referenceModuleCacheMissCount = new AtomicLong();
 
   private final AtomicLong moduleMetricsEvictionCount = new AtomicLong();
 
@@ -37,6 +49,9 @@ public class YangSchemaProviderMetrics {
       IntSupplier referenceModuleCacheSizeSupplier,
       IntSupplier parsedSchemaCacheSizeSupplier,
       int moduleMetricsMaxSize) {
+    this.perModuleMetricsEnabled = Boolean.parseBoolean(System.getProperty(METRICS_PER_MODULE_PROPERTY, "true"));
+    log.info("Monitoring per YANG-module metrics: {}", perModuleMetricsEnabled);
+
     this.moduleCacheMetrics = new BoundedCache<>(
         moduleMetricsMaxSize, 0L, moduleMetricsEvictionCount::incrementAndGet);
 
@@ -47,16 +62,20 @@ public class YangSchemaProviderMetrics {
               YangSchemaProviderMetricsMBean.class, false);
     }
 
-    ObjectName moduleReferenceMetricsName = buildObjectName(DOMAIN + ":type=ModuleReferenceMetrics");
-    if (moduleReferenceMetricsName != null) {
-      registerMBean(
-          moduleReferenceMetricsName,
-          new ResolvedReferenceMetrics(),
-          ResolvedReferenceMetricsMXBean.class,
-          true);
+    if (perModuleMetricsEnabled) {
+      ObjectName moduleReferenceMetricsName = buildObjectName(DOMAIN + ":type=ModuleReferenceMetrics");
+      if (moduleReferenceMetricsName != null) {
+        registerMBean(
+            moduleReferenceMetricsName,
+            new ResolvedReferenceMetrics(),
+            ResolvedReferenceMetricsMXBean.class,
+            true);
+      }
+    } else {
+      log.info("Skipping ModuleReferenceMetrics MBean registration ({}=false) - "
+          + "only aggregate SchemaCache metrics will be exposed.", METRICS_PER_MODULE_PROPERTY);
     }
   }
-
 
   public void recordRequest() {
     totalRequestCount.incrementAndGet();
@@ -70,36 +89,67 @@ public class YangSchemaProviderMetrics {
     parsedSchemaCacheEvictionCount.incrementAndGet();
   }
 
+  public void recordParsedSchemaCacheHit(String moduleName) {
+    parsedSchemaCacheHitCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).parsedSchemaCacheHitCount.incrementAndGet();
+    }
+  }
+
+  public void recordParsedSchemaCacheMiss(String moduleName) {
+    parsedSchemaCacheMissCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).parsedSchemaCacheMissCount.incrementAndGet();
+    }
+  }
+
   public void recordReferenceCacheHit(String moduleName) {
-    moduleMetrics(moduleName).referenceHitCount.incrementAndGet();
+    referenceModuleCacheHitCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).referenceHitCount.incrementAndGet();
+    }
   }
 
   public void recordReferenceCacheMiss(String moduleName) {
-    moduleMetrics(moduleName).referenceMissCount.incrementAndGet();
+    referenceModuleCacheMissCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).referenceMissCount.incrementAndGet();
+    }
   }
 
   public void recordValidationError(String moduleName) {
-    moduleMetrics(moduleName).validationErrorCount.incrementAndGet();
+    validationErrorCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).validationErrorCount.incrementAndGet();
+    }
   }
 
   public void recordCompatibilityCheckFailure(String moduleName) {
-    moduleMetrics(moduleName).compatibilityCheckFailureCount.incrementAndGet();
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).compatibilityCheckFailureCount.incrementAndGet();
+    }
   }
 
-  public void recordResolvedReferences(String rootModuleName, int numResolvedReferences) {
-    moduleMetrics(rootModuleName).numResolvedReferences.set(numResolvedReferences);
+  public void recordResolvedReferences(String moduleName, int numResolvedReferences) {
+    if (perModuleMetricsEnabled) {
+      moduleMetrics(moduleName).numResolvedReferences.set(numResolvedReferences);
+    }
   }
 
   public void recordParseLatency(String moduleName, long durationNanos) {
-    ModuleCacheMetrics moduleCacheMetrics = moduleMetrics(moduleName);
-    moduleCacheMetrics.parseCount.incrementAndGet();
-    moduleCacheMetrics.parseDurationNanos.addAndGet(durationNanos);
+    if (perModuleMetricsEnabled) {
+      ModuleCacheMetrics metrics = moduleMetrics(moduleName);
+      metrics.parseCount.incrementAndGet();
+      metrics.parseDurationNanos.addAndGet(durationNanos);
+    }
   }
 
   public void recordCompatibilityCheckLatency(String moduleName, long durationNanos) {
-    ModuleCacheMetrics moduleCacheMetrics = moduleMetrics(moduleName);
-    moduleCacheMetrics.compatibilityCheckCount.incrementAndGet();
-    moduleCacheMetrics.compatibilityCheckDurationNanos.addAndGet(durationNanos);
+    if (perModuleMetricsEnabled) {
+      ModuleCacheMetrics metrics = moduleMetrics(moduleName);
+      metrics.compatibilityCheckCount.incrementAndGet();
+      metrics.compatibilityCheckDurationNanos.addAndGet(durationNanos);
+    }
   }
 
   private ModuleCacheMetrics moduleMetrics(String moduleName) {
@@ -137,6 +187,14 @@ public class YangSchemaProviderMetrics {
     long getParsedSchemaCacheSize();
 
     long getParsedSchemaCacheEvictionCount();
+
+    long getParsedSchemaCacheHitCount();
+
+    long getParsedSchemaCacheMissCount();
+
+    long getReferenceModuleCacheHitCount();
+
+    long getReferenceModuleCacheMissCount();
 
     long getModuleMetricsCacheSize();
 
@@ -181,6 +239,26 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
+    public long getParsedSchemaCacheHitCount() {
+      return parsedSchemaCacheHitCount.get();
+    }
+
+    @Override
+    public long getParsedSchemaCacheMissCount() {
+      return parsedSchemaCacheMissCount.get();
+    }
+
+    @Override
+    public long getReferenceModuleCacheHitCount() {
+      return referenceModuleCacheHitCount.get();
+    }
+
+    @Override
+    public long getReferenceModuleCacheMissCount() {
+      return referenceModuleCacheMissCount.get();
+    }
+
+    @Override
     public long getModuleMetricsCacheSize() {
       return moduleCacheMetrics.size();
     }
@@ -215,6 +293,10 @@ public class YangSchemaProviderMetrics {
     long getCompatibilityCheckCount();
 
     long getCompatibilityCheckDurationNanos();
+
+    long getParsedSchemaCacheHitCount();
+
+    long getParsedSchemaCacheMissCount();
   }
 
   public interface ResolvedReferenceMetricsMXBean {
@@ -231,6 +313,10 @@ public class YangSchemaProviderMetrics {
     Map<String, Long> getCompatibilityCheckCountByModule();
 
     Map<String, Long> getCompatibilityCheckDurationNanosByModule();
+
+    Map<String, Long> getParsedSchemaCacheHitCountByModule();
+
+    Map<String, Long> getParsedSchemaCacheMissCountByModule();
   }
 
   private class ResolvedReferenceMetrics implements ResolvedReferenceMetricsMXBean {
@@ -269,6 +355,16 @@ public class YangSchemaProviderMetrics {
       return snapshot(m -> m.compatibilityCheckDurationNanos.get());
     }
 
+    @Override
+    public Map<String, Long> getParsedSchemaCacheHitCountByModule() {
+      return snapshot(m -> m.parsedSchemaCacheHitCount.get());
+    }
+
+    @Override
+    public Map<String, Long> getParsedSchemaCacheMissCountByModule() {
+      return snapshot(m -> m.parsedSchemaCacheMissCount.get());
+    }
+
     private Map<String, Long> snapshot(java.util.function.Function<ModuleCacheMetrics, Long> valueExtractor) {
       Map<String, Long> snapshot = new LinkedHashMap<>();
       for (Map.Entry<String, ModuleCacheMetrics> entry : moduleCacheMetrics.asMap().entrySet()) {
@@ -288,6 +384,8 @@ public class YangSchemaProviderMetrics {
     private final AtomicLong parseDurationNanos = new AtomicLong();
     private final AtomicLong compatibilityCheckCount = new AtomicLong();
     private final AtomicLong compatibilityCheckDurationNanos = new AtomicLong();
+    private final AtomicLong parsedSchemaCacheHitCount = new AtomicLong();
+    private final AtomicLong parsedSchemaCacheMissCount = new AtomicLong();
 
     @Override
     public long getReferenceHitCount() {
@@ -333,5 +431,16 @@ public class YangSchemaProviderMetrics {
     public long getCompatibilityCheckDurationNanos() {
       return compatibilityCheckDurationNanos.get();
     }
+
+    @Override
+    public long getParsedSchemaCacheHitCount() {
+      return parsedSchemaCacheHitCount.get();
+    }
+
+    @Override
+    public long getParsedSchemaCacheMissCount() {
+      return parsedSchemaCacheMissCount.get();
+    }
   }
 }
+
