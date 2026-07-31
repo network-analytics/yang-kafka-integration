@@ -179,6 +179,14 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       metrics.recordParsedSchemaCacheMiss(metricsModuleName);
       metrics.recordResolvedReferences(metricsModuleName, resolvedReferences.size());
 
+      // cheap check before context.validation()
+      for (Import imported : rootModule.getImports()) {
+        // AH: do we need to resolve imports recursively?! Assuming this check was done on each one
+        if (!resolvedReferences.containsKey(imported.getArgStr())) {
+          throw new YangSchemaException("Unresolved import: " + imported);
+        }
+      }
+
       var result = context.validate();
       if (!result.isOk()) {
         // YANGKit is not able to have complete validation context, this is only relevant for data
@@ -196,13 +204,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           metrics.recordValidationError(metricsModuleName);
         }
       }
-
-      for (Import imported : rootModule.getImports()) {
-        // AH: do we need to resolve imports recursively?! Assuming this check was done on each one
-        if (!resolvedReferences.containsKey(imported.getArgStr())) {
-          throw new IllegalArgumentException("Unresolved import: " + imported);
-        }
-      }
       context.getParseResult().clear();
 
       return new YangSchema(
@@ -214,7 +215,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           metrics);
     } catch (YangParserException e) {
       log.error("Error parsing Yang Schema", e);
-      throw new IllegalArgumentException("Invalid Yang " + schema.getSchema(), e);
+      throw new YangSchemaException("Invalid Yang " + schema.getSchema(), e);
     } catch (Exception e) {
       log.error("Error parsing Yang Schema", e);
       throw e;
