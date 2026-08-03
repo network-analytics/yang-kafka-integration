@@ -3,6 +3,7 @@ package ch.swisscom.kafka.schemaregistry.util;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -19,7 +20,7 @@ public final class BoundedCache<K, V> {
       builder.expireAfterAccess(idleTimeoutMillis, TimeUnit.MILLISECONDS);
     }
     if (onEviction != null) {
-      RemovalListener<K, V> removalListener = notification -> onEviction.run();
+      RemovalListener<K, V> removalListener = (RemovalNotification<K, V> notification) -> onEviction.run();
       this.cache = builder.removalListener(removalListener).build();
     } else {
       this.cache = builder.build();

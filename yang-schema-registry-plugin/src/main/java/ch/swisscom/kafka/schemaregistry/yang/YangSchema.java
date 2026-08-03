@@ -16,7 +16,6 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
-import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
@@ -67,7 +66,7 @@ public class YangSchema implements ParsedSchema {
   private static final int NO_HASHCODE = Integer.MIN_VALUE;
   private transient int hashCode = NO_HASHCODE;
 
-  private final YangSchemaProviderMetrics metrics;
+//  private final YangSchemaProviderMetrics metrics;
 
   public YangSchema(
       String schemaString,
@@ -77,8 +76,7 @@ public class YangSchema implements ParsedSchema {
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
       Metadata metadata,
-      RuleSet ruleSet,
-      YangSchemaProviderMetrics metrics) {
+      RuleSet ruleSet) {
     this.schemaString = schemaString;
     this.version = version;
 
@@ -88,26 +86,6 @@ public class YangSchema implements ParsedSchema {
     this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
     this.metadata = metadata;
     this.ruleSet = ruleSet;
-    this.metrics = metrics;
-  }
-
-  public YangSchema(
-      String schemaString,
-      YangSchemaContext context,
-      Module module,
-      List<SchemaReference> references,
-      Map<String, String> resolvedReferences,
-      YangSchemaProviderMetrics metrics) {
-    this(
-        schemaString,
-        null,
-        context,
-        module,
-        references,
-        resolvedReferences,
-        null,
-        null,
-        metrics);
   }
 
   public YangSchema(
@@ -116,7 +94,7 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, null);
+    this(schemaString, null, context, module, references, resolvedReferences, null, null);
   }
 
   @Override
@@ -164,8 +142,7 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet,
-        this.metrics);
+        this.ruleSet);
   }
 
   @Override
@@ -178,8 +155,7 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet,
-        this.metrics);
+        this.ruleSet);
   }
 
   @Override
@@ -192,8 +168,7 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         metadata,
-        ruleSet,
-        this.metrics);
+        ruleSet);
   }
 
   @Override
@@ -223,7 +198,6 @@ public class YangSchema implements ParsedSchema {
   public List<String> isBackwardCompatible(ParsedSchema previousSchema) {
     log.debug("Checking if schema is backward compatible: {} and {}", this, previousSchema);
     if (!(previousSchema instanceof YangSchema)) {
-      recordCompatibilityCheckFailure();
       return Collections.singletonList("Incompatible schema types");
     }
     YangSchema previousYangSchema = (YangSchema) previousSchema;
@@ -234,14 +208,12 @@ public class YangSchema implements ParsedSchema {
     try {
       CompareType compareType = CompareType.COMPATIBLE_CHECK;
       List<YangCompareResult> compareResults = comparator.compare(compareType, null);
-      recordCompatibilityCheckLatency(System.nanoTime() - compatibilityCheckStartNanos);
       boolean nonBackwardCompatible =
           compareResults.stream()
               .map(x -> x.getCompatibilityInfo().getCompatibility())
               .anyMatch(x -> x == CompatibilityRule.Compatibility.NBC);
       List<String> ret = new ArrayList<>();
       if (nonBackwardCompatible) {
-        recordCompatibilityCheckFailure();
         boolean needCompatible = true;
         var output =
             writeDom4jDoc(
@@ -254,22 +226,8 @@ public class YangSchema implements ParsedSchema {
       }
       return ret;
     } catch (Exception e) {
-      recordCompatibilityCheckLatency(System.nanoTime() - compatibilityCheckStartNanos);
       log.error("Yang Schema Comparator exception", e);
-      recordCompatibilityCheckFailure();
       return Collections.singletonList("Incompatible schema types");
-    }
-  }
-
-  private void recordCompatibilityCheckFailure() {
-    if (metrics != null) {
-      metrics.recordCompatibilityCheckFailure(this.name());
-    }
-  }
-
-  private void recordCompatibilityCheckLatency(long durationNanos) {
-    if (metrics != null) {
-      metrics.recordCompatibilityCheckLatency(this.name(), durationNanos);
     }
   }
 
