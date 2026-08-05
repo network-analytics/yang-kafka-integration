@@ -1,6 +1,7 @@
 package ch.swisscom.kafka.schemaregistry.util;
 
 import java.lang.management.ManagementFactory;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntSupplier;
 import javax.management.MBeanServer;
@@ -21,34 +22,35 @@ public class YangSchemaProviderMetrics {
 
   private final AtomicLong totalRequestCount = new AtomicLong();
 
-  private final AtomicLong referenceModuleCacheEvictionCount = new AtomicLong();
-
+  private final AtomicLong referenceCacheEvictionCount = new AtomicLong();
   private final AtomicLong parsedSchemaCacheEvictionCount = new AtomicLong();
 
   private final AtomicLong parsedSchemaCacheHitCount = new AtomicLong();
-
   private final AtomicLong parsedSchemaCacheMissCount = new AtomicLong();
 
-  private final AtomicLong referenceModuleCacheHitCount = new AtomicLong();
+  private final AtomicLong referenceCacheHitCount = new AtomicLong();
+  private final AtomicLong referenceCacheMissCount = new AtomicLong();
 
-  private final AtomicLong referenceModuleCacheMissCount = new AtomicLong();
+  private final AtomicLong compatibleCount = new AtomicLong();
+  private final AtomicLong incompatibleCount = new AtomicLong();
 
-  private final AtomicLong moduleMetricsEvictionCount = new AtomicLong();
-
-  private final AtomicLong validationErrorCount = new AtomicLong();
+  private final ConcurrentHashMap<ParseErrorReason, AtomicLong> parseErrorCounts = new ConcurrentHashMap<>();
 
   public YangSchemaProviderMetrics(
-      IntSupplier referenceModuleCacheSizeSupplier,
+      IntSupplier referenceCacheSizeSupplier,
       IntSupplier parsedSchemaCacheSizeSupplier) {
 
     ObjectName name = buildObjectName(DOMAIN + ":type=SchemaCache");
     if (name != null) {
       registerMBean(name,
               new GlobalMetrics(
-                  referenceModuleCacheSizeSupplier, parsedSchemaCacheSizeSupplier
-//                  inFlightParseCountSupplier
+                  referenceCacheSizeSupplier, parsedSchemaCacheSizeSupplier
               ),
               YangSchemaProviderMetricsMBean.class, false);
+    }
+
+    for (ParseErrorReason reason : ParseErrorReason.values()) {
+      getOrRegisterParseErrorCounter(reason);
     }
   }
 
@@ -56,8 +58,8 @@ public class YangSchemaProviderMetrics {
     totalRequestCount.incrementAndGet();
   }
 
-  public void recordReferenceModuleCacheEviction() {
-    referenceModuleCacheEvictionCount.incrementAndGet();
+  public void recordReferenceCacheEviction() {
+    referenceCacheEvictionCount.incrementAndGet();
   }
 
   public void recordParsedSchemaCacheEviction() {
@@ -73,15 +75,34 @@ public class YangSchemaProviderMetrics {
   }
 
   public void recordReferenceCacheHit() {
-    referenceModuleCacheHitCount.incrementAndGet();
+    referenceCacheHitCount.incrementAndGet();
   }
 
   public void recordReferenceCacheMiss() {
-    referenceModuleCacheMissCount.incrementAndGet();
+    referenceCacheMissCount.incrementAndGet();
   }
 
-  public void recordValidationError() {
-    validationErrorCount.incrementAndGet();
+  public void recordCompatibilityCheck(boolean isCompatible) {
+    if (isCompatible) {
+      compatibleCount.incrementAndGet();
+    } else {
+      incompatibleCount.incrementAndGet();
+    }
+  }
+
+  public void recordParseError(ParseErrorReason reason) {
+    getOrRegisterParseErrorCounter(reason).incrementAndGet();
+  }
+
+  private AtomicLong getOrRegisterParseErrorCounter(ParseErrorReason reason) {
+    return parseErrorCounts.computeIfAbsent(reason, r -> {
+      AtomicLong counter = new AtomicLong();
+      ObjectName name = buildObjectName(DOMAIN + ":type=SchemaParseError,reason=" + r.label());
+      if (name != null) {
+        registerMBean(name, (ParseErrorMetricsMBean) counter::get, ParseErrorMetricsMBean.class, false);
+      }
+      return counter;
+    });
   }
 
   private static ObjectName buildObjectName(String name) {
@@ -108,9 +129,9 @@ public class YangSchemaProviderMetrics {
   public interface YangSchemaProviderMetricsMBean {
     long getTotalRequestCount();
 
-    long getReferenceModuleCacheSize();
+    long getReferenceCacheSize();
 
-    long getReferenceModuleCacheEvictionCount();
+    long getReferenceCacheEvictionCount();
 
     long getParsedSchemaCacheSize();
 
@@ -120,30 +141,29 @@ public class YangSchemaProviderMetrics {
 
     long getParsedSchemaCacheMissCount();
 
-    long getReferenceModuleCacheHitCount();
+    long getReferenceCacheHitCount();
 
-    long getReferenceModuleCacheMissCount();
+    long getReferenceCacheMissCount();
 
-    long getModuleMetricsEvictionCount();
+    long getCompatibleCount();
 
-    long getValidationErrorCount();
+    long getIncompatibleCount();
+  }
 
-//    long getInFlightParseCount();
+  public interface ParseErrorMetricsMBean {
+    long getCount();
   }
 
   private class GlobalMetrics implements YangSchemaProviderMetricsMBean {
-    private final IntSupplier referenceModuleCacheSizeSupplier;
+    private final IntSupplier referenceCacheSizeSupplier;
     private final IntSupplier parsedSchemaCacheSizeSupplier;
-//    private final IntSupplier inFlightParseCountSupplier;
 
     GlobalMetrics(
-        IntSupplier referenceModuleCacheSizeSupplier,
+        IntSupplier referenceCacheSizeSupplier,
         IntSupplier parsedSchemaCacheSizeSupplier
-//        IntSupplier inFlightParseCountSupplier
     ) {
-      this.referenceModuleCacheSizeSupplier = referenceModuleCacheSizeSupplier;
+      this.referenceCacheSizeSupplier = referenceCacheSizeSupplier;
       this.parsedSchemaCacheSizeSupplier = parsedSchemaCacheSizeSupplier;
-//      this.inFlightParseCountSupplier = inFlightParseCountSupplier;
     }
 
     @Override
@@ -152,13 +172,13 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
-    public long getReferenceModuleCacheSize() {
-      return referenceModuleCacheSizeSupplier.getAsInt();
+    public long getReferenceCacheSize() {
+      return referenceCacheSizeSupplier.getAsInt();
     }
 
     @Override
-    public long getReferenceModuleCacheEvictionCount() {
-      return referenceModuleCacheEvictionCount.get();
+    public long getReferenceCacheEvictionCount() {
+      return referenceCacheEvictionCount.get();
     }
 
     @Override
@@ -182,29 +202,23 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
-    public long getReferenceModuleCacheHitCount() {
-      return referenceModuleCacheHitCount.get();
+    public long getReferenceCacheHitCount() {
+      return referenceCacheHitCount.get();
     }
 
     @Override
-    public long getReferenceModuleCacheMissCount() {
-      return referenceModuleCacheMissCount.get();
+    public long getReferenceCacheMissCount() {
+      return referenceCacheMissCount.get();
     }
 
     @Override
-    public long getModuleMetricsEvictionCount() {
-      return moduleMetricsEvictionCount.get();
+    public long getCompatibleCount() {
+      return compatibleCount.get();
     }
 
     @Override
-    public long getValidationErrorCount() {
-      return validationErrorCount.get();
+    public long getIncompatibleCount() {
+      return incompatibleCount.get();
     }
-
-//    @Override
-//    public long getInFlightParseCount() {
-//      return inFlightParseCountSupplier.getAsInt();
-//    }
   }
 }
-

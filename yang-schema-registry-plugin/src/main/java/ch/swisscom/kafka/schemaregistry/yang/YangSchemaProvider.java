@@ -17,7 +17,7 @@
 package ch.swisscom.kafka.schemaregistry.yang;
 
 import ch.swisscom.kafka.schemaregistry.util.BoundedCache;
-import ch.swisscom.kafka.schemaregistry.util.SimpleBoundedCache;
+import ch.swisscom.kafka.schemaregistry.util.ParseErrorReason;
 import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import io.confluent.kafka.schemaregistry.AbstractSchemaProvider;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
@@ -62,7 +62,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private record ReferenceCacheKey(String refName, String refSchema) {}
   private final BoundedCache<ReferenceCacheKey, Module> referenceCache;
 
-  // TODO: when references' order are different, consider it as different keys or same as before (all the rest is the same)
   private record ParsedSchemaCacheKey(String subject, String schemaString, List<SchemaReference> references) {}
   private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
@@ -79,17 +78,18 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     }
     YangStatementImplRegister.registerImpl();
 
-    int referenceCacheMaxSize = parseIntProperty(YANG_REFERENCE_CACHE_MAX_SIZE, DEFAULT_YANG_REFERENCE_CACHE_MAX_SIZE);
-    int parsedSchemaCacheMaxSize = parseIntProperty(YANG_PARSED_SCHEMA_CACHE_MAX_SIZE, DEFAULT_YANG_PARSED_SCHEMA_CACHE_MAX_SIZE);
+    int referenceCacheMaxSize = parseIntProperty(
+            YANG_REFERENCE_CACHE_MAX_SIZE, DEFAULT_YANG_REFERENCE_CACHE_MAX_SIZE);
+    int parsedSchemaCacheMaxSize = parseIntProperty(
+            YANG_PARSED_SCHEMA_CACHE_MAX_SIZE, DEFAULT_YANG_PARSED_SCHEMA_CACHE_MAX_SIZE);
     long cacheIdleTimeoutMillis = Duration.ofMinutes(
             parseIntProperty(YANG_CACHE_IDLE_TIMEOUT_MINUTES, DEFAULT_YANG_CACHE_IDLE_TIMEOUT_MINUTES)).toMillis();
-
 
     this.referenceCache = new BoundedCache<>(
             referenceCacheMaxSize,
             cacheIdleTimeoutMillis,
             () -> {
-              metrics.recordReferenceModuleCacheEviction();
+              metrics.recordReferenceCacheEviction();
             });
 
     this.parsedSchemaCache = new BoundedCache<>(
@@ -102,7 +102,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     this.metrics = new YangSchemaProviderMetrics(
             referenceCache::size,
             parsedSchemaCache::size
-//            () -> parseMaxConcurrency - parseConcurrencyLimiter.availablePermits(),
             );
   }
 
@@ -167,7 +166,15 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   }
 
   private YangSchema parseYangSchema(Schema schema, AtomicReference<String> metricsKeyRef) {
-    Map<String, String> resolvedReferences = resolveReferences(schema);
+    Map<String, String> resolvedReferences;
+    try {
+      resolvedReferences = resolveReferences(schema);
+    } catch (Exception e) {
+      log.error("Failed to resolve references for subject {}: {}: {}",
+          schema.getSubject(), e.getClass().getSimpleName(), e.getMessage());
+      metrics.recordParseError(ParseErrorReason.UNRESOLVABLE_REFERENCE);
+      throw new YangSchemaException("Failed to resolve schema references for subject " + schema.getSubject(), e);
+    }
 
     try {
       YangSchemaContext context = YangStatementRegister.getInstance().getSchemeContextInstance();
@@ -222,7 +229,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           }
         }
         if (hasValidationError) {
-          metrics.recordValidationError();
+          metrics.recordParseError(ParseErrorReason.VALIDATION_ERROR);
         }
       }
       context.getParseResult().clear();
@@ -232,12 +239,20 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           context,
           rootModule,
           schema.getReferences(),
-          resolvedReferences);
+          resolvedReferences,
+          metrics);
     } catch (YangParserException e) {
-      log.error("Error parsing Yang Schema", e);
+      log.error("Error parsing Yang Schema for subject {}: {}: {}",
+          schema.getSubject(), e.getClass().getSimpleName(), e.getMessage());
+      metrics.recordParseError(ParseErrorReason.PARSE_SCHEMA);
       throw new YangSchemaException("Invalid Yang " + schema.getSchema(), e);
+    } catch (YangSchemaException e) {
+      log.error("Unresolved import for subject {}: {}", schema.getSubject(), e.getMessage());
+      metrics.recordParseError(ParseErrorReason.UNRESOLVED_IMPORTS);
+      throw e;
     } catch (Exception e) {
-      log.error("Error parsing Yang Schema", e);
+      log.error("Error parsing Yang Schema for subject {}: {}", schema.getSubject(), e.getMessage());
+      metrics.recordParseError(ParseErrorReason.UNEXPECTED);
       throw e;
     }
   }

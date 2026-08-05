@@ -16,6 +16,7 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
+import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
@@ -66,7 +67,29 @@ public class YangSchema implements ParsedSchema {
   private static final int NO_HASHCODE = Integer.MIN_VALUE;
   private transient int hashCode = NO_HASHCODE;
 
-//  private final YangSchemaProviderMetrics metrics;
+  private final YangSchemaProviderMetrics metrics;
+
+  public YangSchema(
+      String schemaString,
+      Integer version,
+      YangSchemaContext context,
+      Module module,
+      List<SchemaReference> references,
+      Map<String, String> resolvedReferences,
+      Metadata metadata,
+      RuleSet ruleSet,
+      YangSchemaProviderMetrics metrics) {
+    this.schemaString = schemaString;
+    this.version = version;
+
+    this.context = context;
+    this.module = module;
+    this.references = Collections.unmodifiableList(references);
+    this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
+    this.metadata = metadata;
+    this.ruleSet = ruleSet;
+    this.metrics = metrics;
+  }
 
   public YangSchema(
       String schemaString,
@@ -77,15 +100,17 @@ public class YangSchema implements ParsedSchema {
       Map<String, String> resolvedReferences,
       Metadata metadata,
       RuleSet ruleSet) {
-    this.schemaString = schemaString;
-    this.version = version;
+    this(schemaString, version, context, module, references, resolvedReferences, metadata, ruleSet, null);
+  }
 
-    this.context = context;
-    this.module = module;
-    this.references = Collections.unmodifiableList(references);
-    this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
-    this.metadata = metadata;
-    this.ruleSet = ruleSet;
+  public YangSchema(
+      String schemaString,
+      YangSchemaContext context,
+      Module module,
+      List<SchemaReference> references,
+      Map<String, String> resolvedReferences,
+      YangSchemaProviderMetrics metrics) {
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, metrics);
   }
 
   public YangSchema(
@@ -94,7 +119,7 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null);
+    this(schemaString, null, context, module, references, resolvedReferences, null, null, null);
   }
 
   @Override
@@ -142,7 +167,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet);
+        this.ruleSet,
+        this.metrics);
   }
 
   @Override
@@ -155,7 +181,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         this.metadata,
-        this.ruleSet);
+        this.ruleSet,
+        this.metrics);
   }
 
   @Override
@@ -168,7 +195,8 @@ public class YangSchema implements ParsedSchema {
         this.references,
         this.resolvedReferences,
         metadata,
-        ruleSet);
+        ruleSet,
+        this.metrics);
   }
 
   @Override
@@ -204,7 +232,6 @@ public class YangSchema implements ParsedSchema {
     YangComparator comparator =
         new YangComparator(previousYangSchema.yangSchemaContext(), this.context);
 
-    long compatibilityCheckStartNanos = System.nanoTime();
     try {
       CompareType compareType = CompareType.COMPATIBLE_CHECK;
       List<YangCompareResult> compareResults = comparator.compare(compareType, null);
@@ -224,9 +251,16 @@ public class YangSchema implements ParsedSchema {
           ret.add("Incompatible schema changes detected, but failed to generate report.");
         }
       }
+
+      if (this.metrics != null) {
+        this.metrics.recordCompatibilityCheck(!nonBackwardCompatible);
+      }
       return ret;
     } catch (Exception e) {
       log.error("Yang Schema Comparator exception", e);
+      if (this.metrics != null) {
+        this.metrics.recordCompatibilityCheck(false);
+      }
       return Collections.singletonList("Incompatible schema types");
     }
   }
@@ -286,7 +320,9 @@ public class YangSchema implements ParsedSchema {
     if (hashCode == NO_HASHCODE) {
       hashCode =
           Objects.hash(
-              this.schemaString,
+              this.module.getModuleId().getModuleName(),
+              this.module.getModuleId().getRevision(),
+              this.module.getSubElements(),
               references,
               version(),
               metadata,
@@ -304,7 +340,11 @@ public class YangSchema implements ParsedSchema {
       return false;
     }
     YangSchema other = (YangSchema) obj;
-    return Objects.equals(this.schemaString, other.schemaString)
+    return Objects.equals(
+            this.module.getModuleId().getModuleName(), other.module.getModuleId().getModuleName())
+        && Objects.equals(
+            this.module.getModuleId().getRevision(), other.module.getModuleId().getRevision())
+        && Objects.equals(this.module.getSubElements(), other.module.getSubElements())
         && Objects.equals(this.references, other.references)
         && Objects.equals(this.version(), other.version())
         && Objects.equals(this.metadata, other.metadata)
