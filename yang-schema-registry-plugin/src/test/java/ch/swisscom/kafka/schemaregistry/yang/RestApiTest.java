@@ -16,6 +16,8 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
+import static ch.swisscom.kafka.schemaregistry.yang.TestSchemas.BASE_SCHEMA_SINGLE_LEAF;
+import static ch.swisscom.kafka.schemaregistry.yang.TestSchemas.NEW_SCHEMA_WITH_OPTIONAL_LEAF;
 import static org.junit.Assert.*;
 
 import io.confluent.kafka.schemaregistry.ClusterTestHarness;
@@ -383,6 +385,28 @@ public class RestApiTest extends ClusterTestHarness {
             .testCompatibility(requestYang11, interfacesSubject, "latest", false, true)
             .isEmpty();
     assertFalse("Schema should be incompatible with specified version", isCompatible);
+  }
+
+  @Test
+  public void testCompatibleSchemaByAddingOptionalLeaf()
+      throws Exception {
+    String subject = "test-compatibility";
+    registerAndVerifySchema(restApp.restClient, BASE_SCHEMA_SINGLE_LEAF, 1, subject);
+
+    restApp.restClient.updateCompatibility(CompatibilityLevel.BACKWARD.name, subject);
+
+    RegisterSchemaRequest request = new RegisterSchemaRequest();
+    request.setSchema(NEW_SCHEMA_WITH_OPTIONAL_LEAF);
+    request.setSchemaType(YangSchema.TYPE);
+
+    boolean isCompatible = restApp.restClient
+            .testCompatibility(request, subject, "latest", false, true)
+            .isEmpty();
+    assertTrue("Adding an optional leaf should still be backward-compatible", isCompatible);
+
+    // Registering should succeed as BACKWARD compatibility.
+    int registeredId = restApp.restClient.registerSchema(request, subject, false).getId();
+    assertEquals("Registering should succeed", 2, registeredId);
   }
 
   @Test

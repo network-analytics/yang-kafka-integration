@@ -73,4 +73,34 @@ public class TestSchemas {
           + "      \"Simple int8 type for testing\";\n"
           + "  }\n"
           + "}\n";
+
+  // schema pair for added optional leaf
+  static final String BASE_SCHEMA_SINGLE_LEAF =
+          "module test-compat-revision {\n"
+                  + "  yang-version 1.1;\n"
+                  + "  namespace \"urn:example:test-compat-revision\";\n"
+                  + "  prefix tcr;\n"
+                  + "  revision 2025-01-01;\n"
+                  + "  container root {\n"
+                  + "    leaf currLeaf {\n"
+                  + "      type string;\n"
+                  + "    }\n"
+                  + "  }\n"
+                  + "}\n";
+
+  static final String NEW_SCHEMA_WITH_OPTIONAL_LEAF =
+          "module test-compat-revision {\n"
+                  + "  yang-version 1.1;\n"
+                  + "  namespace \"urn:example:test-compat-revision\";\n"
+                  + "  prefix tcr;\n"
+                  + "  revision 2026-02-01;\n"
+                  + "  container root {\n"
+                  + "    leaf currLeaf {\n"
+                  + "      type string;\n"
+                  + "    }\n"
+                  + "    leaf newOptionalLeaf {\n"
+                  + "      type string;\n"
+                  + "    }\n"
+                  + "  }\n"
+                  + "}\n";
 }
