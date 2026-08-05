@@ -188,13 +188,20 @@
                                         <exclude>META-INF/*.MF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>log4j.properties</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
                                     </excludes>
                                 </filter>
                                 <filter>
                                     <artifact>io.github.yang-central.yangkit:yang-compiler</artifact>
                                     <excludes>
                                         <exclude>plugins.json</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>io.github.yang-central.yangkit:yangkit-model-impl</artifact>
+                                    <excludes>
+                                        <exclude>org/yangcentral/yangkit/register/YangStatementRegister.class</exclude>
                                     </excludes>
                                 </filter>
                             </filters>
