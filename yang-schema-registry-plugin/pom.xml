@@ -190,6 +190,8 @@
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/maven/**</exclude>
+                                        <exclude>log4j.properties</exclude>
                                     </excludes>
                                 </filter>
                                 <filter>
@@ -239,6 +241,10 @@
                                     <exclude>junit:*</exclude>
                                     <exclude>org.junit.jupiter:*</exclude>
                                     <exclude>org.junit.platform:*</exclude>
+                                    <exclude>org.apache.logging.log4j:*</exclude>
+                                    <exclude>org.apache.commons:commons-codec</exclude>
+                                    <exclude>org.apache.commons:commons-io</exclude>
+                                    <exclude>org.apache.commons:commons-math3</exclude>
                                 </excludes>
                             </artifactSet>
                             <relocations>
