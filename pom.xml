@@ -73,6 +73,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <yangkit.version>1.5.0</yangkit.version>
+        <odl.yangtools.version>13.0.11</odl.yangtools.version>
         <yangkit.common.version>1.1.5</yangkit.common.version>
         <yangkit.common.utils.version>1.0.3</yangkit.common.utils.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
@@ -89,6 +90,7 @@
 
     <modules>
         <module>yang-schema-registry-plugin</module>
+        <module>yang-sr-odl</module>
         <module>yang-json-schema-serializer</module>
         <module>yang-json-schema-serde</module>
         <module>yang-cbor-schema-serializer</module>
