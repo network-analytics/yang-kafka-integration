@@ -15,7 +15,7 @@ public final class BoundedCache<K, V> {
   private final Cache<K, V> cache;
 
   public BoundedCache(int maxSize, long idleTimeoutMillis, Runnable onEviction) {
-    CacheBuilder<Object, Object> builder = CacheBuilder.newBuilder().maximumSize(maxSize);
+    CacheBuilder<Object, Object> builder = CacheBuilder.newBuilder().maximumSize(maxSize).softValues();
     if (idleTimeoutMillis > 0) {
       builder.expireAfterAccess(idleTimeoutMillis, TimeUnit.MILLISECONDS);
     }

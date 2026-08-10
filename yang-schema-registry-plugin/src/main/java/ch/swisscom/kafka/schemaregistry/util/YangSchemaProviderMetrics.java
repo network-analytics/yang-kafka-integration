@@ -37,21 +37,39 @@ public class YangSchemaProviderMetrics {
   private final ConcurrentHashMap<ParseErrorReason, AtomicLong> parseErrorCounts = new ConcurrentHashMap<>();
 
   public YangSchemaProviderMetrics(
-      IntSupplier referenceCacheSizeSupplier,
-      IntSupplier parsedSchemaCacheSizeSupplier) {
+      IntSupplier referenceCacheSizeSupplier, int referenceCacheMaxSize,
+      IntSupplier parsedSchemaCacheSizeSupplier, int parsedSchemaCacheMaxSize) {
 
     ObjectName name = buildObjectName(DOMAIN + ":type=SchemaCache");
     if (name != null) {
-      registerMBean(name,
-              new GlobalMetrics(
-                  referenceCacheSizeSupplier, parsedSchemaCacheSizeSupplier
-              ),
-              YangSchemaProviderMetricsMBean.class, false);
+      registerMBean(name, new GlobalMetrics(), YangSchemaProviderMetricsMBean.class, false);
     }
+
+    registerCacheSizeMBean("reference", referenceCacheSizeSupplier, referenceCacheMaxSize);
+    registerCacheSizeMBean("parsed_schema", parsedSchemaCacheSizeSupplier, parsedSchemaCacheMaxSize);
 
     for (ParseErrorReason reason : ParseErrorReason.values()) {
       getOrRegisterParseErrorCounter(reason);
     }
+  }
+
+  private void registerCacheSizeMBean(String cacheName, IntSupplier sizeSupplier, int maxSize) {
+    ObjectName name = buildObjectName(DOMAIN + ":type=Cache,cache=" + cacheName);
+    if (name == null) {
+      return;
+    }
+    CacheSizeMetricsMBean mbean = new CacheSizeMetricsMBean() {
+      @Override
+      public long getSize() {
+        return sizeSupplier.getAsInt();
+      }
+
+      @Override
+      public long getMaxSize() {
+        return maxSize;
+      }
+    };
+    registerMBean(name, mbean, CacheSizeMetricsMBean.class, false);
   }
 
   public void recordRequest() {
@@ -129,11 +147,7 @@ public class YangSchemaProviderMetrics {
   public interface YangSchemaProviderMetricsMBean {
     long getTotalRequestCount();
 
-    long getReferenceCacheSize();
-
     long getReferenceCacheEvictionCount();
-
-    long getParsedSchemaCacheSize();
 
     long getParsedSchemaCacheEvictionCount();
 
@@ -150,21 +164,22 @@ public class YangSchemaProviderMetrics {
     long getIncompatibleCount();
   }
 
+  /**
+   * One instance registered per cache (see {@link #registerCacheSizeMBean}) under
+   * {@code type=Cache,cache=<name>} - exposes current size alongside the configured max size so
+   * both can be scraped/graphed as the same Prometheus metric name, labeled only by {@code cache}.
+   */
+  public interface CacheSizeMetricsMBean {
+    long getSize();
+
+    long getMaxSize();
+  }
+
   public interface ParseErrorMetricsMBean {
     long getCount();
   }
 
   private class GlobalMetrics implements YangSchemaProviderMetricsMBean {
-    private final IntSupplier referenceCacheSizeSupplier;
-    private final IntSupplier parsedSchemaCacheSizeSupplier;
-
-    GlobalMetrics(
-        IntSupplier referenceCacheSizeSupplier,
-        IntSupplier parsedSchemaCacheSizeSupplier
-    ) {
-      this.referenceCacheSizeSupplier = referenceCacheSizeSupplier;
-      this.parsedSchemaCacheSizeSupplier = parsedSchemaCacheSizeSupplier;
-    }
 
     @Override
     public long getTotalRequestCount() {
@@ -172,19 +187,10 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
-    public long getReferenceCacheSize() {
-      return referenceCacheSizeSupplier.getAsInt();
-    }
-
-    @Override
     public long getReferenceCacheEvictionCount() {
       return referenceCacheEvictionCount.get();
     }
 
-    @Override
-    public long getParsedSchemaCacheSize() {
-      return parsedSchemaCacheSizeSupplier.getAsInt();
-    }
 
     @Override
     public long getParsedSchemaCacheEvictionCount() {

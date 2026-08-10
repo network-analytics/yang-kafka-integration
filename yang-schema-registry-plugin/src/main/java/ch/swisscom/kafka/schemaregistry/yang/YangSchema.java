@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.XMLWriter;
 import org.slf4j.Logger;
@@ -59,7 +60,6 @@ public class YangSchema implements ParsedSchema {
   private final Module module;
   private final YangSchemaContext context;
   private final List<SchemaReference> references;
-  private final Map<String, String> resolvedReferences;
   private final Metadata metadata;
   private final Integer version;
   private final RuleSet ruleSet;
@@ -69,26 +69,49 @@ public class YangSchema implements ParsedSchema {
 
   private final YangSchemaProviderMetrics metrics;
 
+  private final AtomicBoolean validated;
+
   public YangSchema(
       String schemaString,
       Integer version,
       YangSchemaContext context,
       Module module,
       List<SchemaReference> references,
-      Map<String, String> resolvedReferences,
       Metadata metadata,
       RuleSet ruleSet,
       YangSchemaProviderMetrics metrics) {
+    this(
+        schemaString,
+        version,
+        context,
+        module,
+        references,
+        metadata,
+        ruleSet,
+        metrics,
+        new AtomicBoolean(false));
+  }
+
+  private YangSchema(
+      String schemaString,
+      Integer version,
+      YangSchemaContext context,
+      Module module,
+      List<SchemaReference> references,
+      Metadata metadata,
+      RuleSet ruleSet,
+      YangSchemaProviderMetrics metrics,
+      AtomicBoolean validated) {
     this.schemaString = schemaString;
     this.version = version;
 
     this.context = context;
     this.module = module;
     this.references = Collections.unmodifiableList(references);
-    this.resolvedReferences = Collections.unmodifiableMap(resolvedReferences);
     this.metadata = metadata;
     this.ruleSet = ruleSet;
     this.metrics = metrics;
+    this.validated = validated;
   }
 
   public YangSchema(
@@ -97,10 +120,9 @@ public class YangSchema implements ParsedSchema {
       YangSchemaContext context,
       Module module,
       List<SchemaReference> references,
-      Map<String, String> resolvedReferences,
       Metadata metadata,
       RuleSet ruleSet) {
-    this(schemaString, version, context, module, references, resolvedReferences, metadata, ruleSet, null);
+    this(schemaString, version, context, module, references, metadata, ruleSet, null);
   }
 
   public YangSchema(
@@ -108,18 +130,17 @@ public class YangSchema implements ParsedSchema {
       YangSchemaContext context,
       Module module,
       List<SchemaReference> references,
-      Map<String, String> resolvedReferences,
       YangSchemaProviderMetrics metrics) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, metrics);
+    this(schemaString, null, context, module, references, null, null, metrics);
   }
 
   public YangSchema(
       String schemaString,
       YangSchemaContext context,
       Module module,
-      List<SchemaReference> references,
-      Map<String, String> resolvedReferences) {
-    this(schemaString, null, context, module, references, resolvedReferences, null, null, null);
+      List<SchemaReference> references
+  ) {
+    this(schemaString, null, context, module, references, null, null, null);
   }
 
   @Override
@@ -165,10 +186,10 @@ public class YangSchema implements ParsedSchema {
         this.context,
         this.module,
         this.references,
-        this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.metrics);
+        this.metrics,
+        this.validated);
   }
 
   @Override
@@ -179,10 +200,10 @@ public class YangSchema implements ParsedSchema {
         this.context,
         this.module,
         this.references,
-        this.resolvedReferences,
         this.metadata,
         this.ruleSet,
-        this.metrics);
+        this.metrics,
+        this.validated);
   }
 
   @Override
@@ -193,10 +214,10 @@ public class YangSchema implements ParsedSchema {
         this.context,
         this.module,
         this.references,
-        this.resolvedReferences,
         metadata,
         ruleSet,
-        this.metrics);
+        this.metrics,
+        this.validated);
   }
 
   @Override
@@ -272,6 +293,9 @@ public class YangSchema implements ParsedSchema {
 
   @Override
   public void validate() {
+    if (!this.validated.compareAndSet(false, true)) {
+      return;
+    }
     ValidatorResult result = this.context.validate();
     if (!result.isOk()) {
       // YANGKit is not able to have complete validation context, this is only relevant for data
@@ -285,6 +309,7 @@ public class YangSchema implements ParsedSchema {
         }
       }
     }
+//    this.context.clearBuildResult();
   }
 
   public YangDataDocument validate(JsonNode jsonNode) throws YangCodecException {
