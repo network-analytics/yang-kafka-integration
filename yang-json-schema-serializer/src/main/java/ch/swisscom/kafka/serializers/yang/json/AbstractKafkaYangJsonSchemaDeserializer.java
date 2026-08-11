@@ -117,17 +117,25 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     }
 
     // Extract schema-id from Kafka header.
-    // NetGauze (Rust) writes it as a UTF-8 decimal string (e.g. "42").
+    // NetGauze (Rust) writes it as a UTF-8 decimal string (e.g. "602").
     // yang-kafka-integration (Java) writes it as 4-byte big-endian binary.
-    // We handle both formats.
+    // Differentiate by length: exactly 4 bytes = binary, otherwise = UTF-8 string.
     int id = -1;
     try {
-      byte[] serializedSchemaId =
-          headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY).value();
-      try {
-        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8).trim());
-      } catch (NumberFormatException nfe) {
+      if (headers == null) {
+        log.warn("Kafka headers are null — cannot read schema-id, skipping record");
+        return null;
+      }
+      var header = headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY);
+      if (header == null || header.value() == null) {
+        log.warn("schema-id header missing or empty, skipping record");
+        return null;
+      }
+      byte[] serializedSchemaId = header.value();
+      if (serializedSchemaId.length == 4) {
         id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      } else {
+        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
       }
     } catch (Exception e) {
       log.warn("Failed to read schema-id header: {}", e.getMessage());
@@ -232,7 +240,8 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
                     .collect(java.util.stream.Collectors.toList());
         if (!parseErrors.isEmpty()) {
           String errors = String.join("\n  ", parseErrors);
-          log.warn("YANG JSON parse errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
+          log.warn(
+              "YANG JSON parse errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
           return null;
         }
 
@@ -257,7 +266,10 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
                     .collect(java.util.stream.Collectors.toList());
         if (!validationErrors.isEmpty()) {
           String errors = String.join("\n  ", validationErrors);
-          log.warn("YANG JSON validation errors for schema-id={} — message skipped:\n  {}", schemaId, errors);
+          log.warn(
+              "YANG JSON validation errors for schema-id={} — message skipped:\n  {}",
+              schemaId,
+              errors);
           return null;
         }
       }
@@ -271,7 +283,11 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       log.debug("[SUCCESS] schema-id={} deserialized OK", schemaId);
       return doc;
     } catch (Exception e) {
-      log.error("Error deserializing YANG JSON via YANG Library for schema-id={}: {}", schemaId, e.getMessage(), e);
+      log.error(
+          "Error deserializing YANG JSON via YANG Library for schema-id={}: {}",
+          schemaId,
+          e.getMessage(),
+          e);
       return null;
     }
   }
