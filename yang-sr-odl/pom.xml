@@ -1,0 +1,127 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>ch.swisscom</groupId>
+        <artifactId>yang-kafka-integration</artifactId>
+        <version>0.0.7-7.4</version>
+    </parent>
+    <artifactId>yang-sr-odl</artifactId>
+    <version>0.0.7-7.4</version>
+    <packaging>jar</packaging>
+    <name>yang-sr-odl</name>
+    <description>Yang Schema Registry Plugin using OpenDaylight Yangtools</description>
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-schema-registry-client</artifactId>
+            <version>${confluent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-parser-api</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-parser-impl</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-model-api</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+        <dependency>
+            <!-- Provides StringYangTextSource, the concrete YangTextSource implementation used
+                 to feed in-memory schema text to the parser (org.opendaylight.yangtools.yang.model.repo.api.StringYangTextSchemaSource
+                 was removed/moved here as of yangtools 12.x/13.x). -->
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-model-spi</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+        <!-- For testing and mocking -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-schema-registry</artifactId>
+            <version>${confluent.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <relocations>
+                                <relocation>
+                                    <pattern>org.opendaylight.yangtools</pattern>
+                                    <shadedPattern>shaded.org.opendaylight.yangtools</shadedPattern>
+                                </relocation>
+                            </relocations>
+                            <filters>
+                                <filter>
+                                    <!--
+                                        Strip signature files from any signed dependency jars that get
+                                        merged into the shaded jar. Once shading rewrites/merges classes,
+                                        the original signatures no longer match, causing the JVM to throw
+                                        java.lang.SecurityException: Invalid signature file digest for
+                                        Manifest main attributes at class-load time.
+                                    -->
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!--
+                                    Yangtools uses java.util.ServiceLoader (e.g. YangXPathParserFactory)
+                                    resolved via META-INF/services/* files. The relocation above rewrites
+                                    org.opendaylight.yangtools.* bytecode references to
+                                    shaded.org.opendaylight.yangtools.*, but plain resource merging does
+                                    NOT rewrite the class names *listed inside* those service files -
+                                    without this transformer they'd still point at the old, no-longer-
+                                    present package, so ServiceLoader finds nothing and yangtools' static
+                                    initializers fail with "No YangXPathParserFactory found". This
+                                    transformer merges same-named service files across jars AND relocates
+                                    the class name entries inside them consistently with the relocation
+                                    rules above.
+                                -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
