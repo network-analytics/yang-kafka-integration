@@ -266,7 +266,7 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(RootYangSchema, context, module, refs, Collections.emptyMap());
+        new YangSchema(RootYangSchema, context, module, refs);
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), "root", false);
@@ -303,7 +303,7 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(schemas.get(interfaces), context, module, refs, Collections.emptyMap());
+        new YangSchema(schemas.get(interfaces), context, module, refs);
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
@@ -340,7 +340,7 @@ public class RestApiTest extends ClusterTestHarness {
     Module module = context.getModules().get(0);
 
     YangSchema schema =
-        new YangSchema(schemas.get(interfaces), context, module, refs, Collections.emptyMap());
+        new YangSchema(schemas.get(interfaces), context, module, refs);
     Schema registeredSchema =
         restApp.restClient.lookUpSubjectVersion(
             schema.canonicalString(), YangSchema.TYPE, schema.references(), interfaces, false);
