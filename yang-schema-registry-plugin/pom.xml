@@ -68,11 +68,6 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.netgauze</groupId>
-            <artifactId>yanglib-java</artifactId>
-            <version>1.0.0</version>
-        </dependency>
-        <dependency>
             <groupId>io.github.yang-central.yangkit</groupId>
             <artifactId>yangkit-parser</artifactId>
             <version>${yangkit.version}</version>
@@ -201,6 +196,13 @@
                                     <artifact>io.github.yang-central.yangkit:yang-compiler</artifact>
                                     <excludes>
                                         <exclude>plugins.json</exclude>
+                                    </excludes>
+                                </filter>
+                                <!-- Exclude rules.xml from other jars to prevent overwriting our default-rules.xml -->
+                                <filter>
+                                    <artifact>commons-validator:commons-validator</artifact>
+                                    <excludes>
+                                        <exclude>rules.xml</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

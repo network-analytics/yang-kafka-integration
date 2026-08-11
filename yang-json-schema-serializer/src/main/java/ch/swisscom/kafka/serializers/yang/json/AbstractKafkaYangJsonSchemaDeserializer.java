@@ -139,13 +139,19 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     }
 
     // Extract schema-id from Kafka header.
-    // NetGauze (Rust) writes it as a UTF-8 decimal string (e.g. "42").
+    // NetGauze (Rust) writes it as a UTF-8 decimal string (e.g. "602").
     // yang-kafka-integration (Java) writes it as 4-byte big-endian binary.
-    // We handle both formats.
+    // Differentiate by length: exactly 4 bytes = binary, otherwise = UTF-8 string.
     int id = -1;
     try {
-      byte[] serializedSchemaId =
-          headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY).value();
+      if (headers == null) {
+        throw new SerializationException("Kafka headers are required to read schema-id");
+      }
+      var header = headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY);
+      if (header == null || header.value() == null) {
+        throw new SerializationException("schema-id header missing or empty");
+      }
+      byte[] serializedSchemaId = header.value();
       if (serializedSchemaId.length == 4) {
         id = ByteBuffer.wrap(serializedSchemaId).getInt();
       } else {
