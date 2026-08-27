@@ -28,10 +28,10 @@ import org.yangcentral.yangkit.parser.YangParserException;
 
 public class YangSchemaUtils {
 
-  private static final YangParser YANG_PARSER = new YangParser();
-
   public static Module parseYangString(String name, String schemaString, YangSchemaContext context)
       throws YangParserException {
+
+    YangParser YANG_PARSER = new YangParser();
 
     YangParserEnv yangParserEnv = new YangParserEnv();
     yangParserEnv.setYangStr(schemaString);

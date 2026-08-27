@@ -131,7 +131,8 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       YangSchemaProviderMetrics metrics) {
-    this(schemaString, null, context, module, references, null, null, metrics);
+    this(schemaString, null, context, module, references, null, null, metrics,
+        new AtomicBoolean(true));
   }
 
   public YangSchema(
@@ -309,7 +310,8 @@ public class YangSchema implements ParsedSchema {
         }
       }
     }
-//    this.context.clearBuildResult();
+    // todo: this may need some additional logic in yangkit
+    this.context.clearBuildResult();
   }
 
   public YangDataDocument validate(JsonNode jsonNode) throws YangCodecException {

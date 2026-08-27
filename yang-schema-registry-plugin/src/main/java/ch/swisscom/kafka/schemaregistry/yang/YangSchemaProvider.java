@@ -40,6 +40,7 @@ import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Import;
 import org.yangcentral.yangkit.model.api.stmt.Module;
+import org.yangcentral.yangkit.model.api.stmt.YangStatementCloneException;
 import org.yangcentral.yangkit.parser.YangParserException;
 import org.yangcentral.yangkit.register.YangStatementImplRegister;
 import org.yangcentral.yangkit.register.YangStatementRegister;
@@ -188,12 +189,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             addedModule = clone;
             metrics.recordReferenceCacheHit();
           } else {
-            log.warn(
-                "Cached reference module {} failed its clone-integrity check (unsupported "
-                    + "statement type for clone() reconstruction) - falling back to a full "
-                    + "re-parse for this occurrence; this reference will no longer be served "
-                    + "from cache until re-parsed successfully below",
-                refName);
+            log.warn("Cached reference module {} could not be cloned - falling back to full re-parse it; " +
+                    "it will be re-cached if re-parse succeeds", refName);
           }
         }
 
@@ -202,11 +199,11 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           metrics.recordReferenceCacheMiss();
           addedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
           if (addedModule != null) {
-            Module pristineClone = safeClone(addedModule);
-            if (pristineClone != null) {
-              referenceCache.put(referenceCacheKey, pristineClone);
+            Module clone = safeClone(addedModule);
+            if (clone != null) {
+              referenceCache.put(referenceCacheKey, clone);
             } else {
-              log.debug("Reference {} isn't safely cloned - always re-parse rather than being cached", refName);
+              log.debug("Reference {} could not be cloned - will always be re-parsed", refName);
             }
           }
         }
@@ -227,7 +224,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         }
       }
 
+      // added/cached module may be polluted.
       var result = context.validate();
+
       if (!result.isOk()) {
         // YANGKit is not able to have complete validation context, this is only relevant for data
         // validation which is not performed by the schema registry.
@@ -245,6 +244,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       }
       context.getParseResult().clear();
       context.clearValidateResult();
+      context.clearBuildResult();
 
       return new YangSchema(
           schema.getSchema(),
@@ -271,8 +271,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private static Module safeClone(Module original) {
     try {
       return (Module) original.clone();
-    } catch (Exception e) {
-      // TODO: using YangStatementCloneException?
+    } catch (YangStatementCloneException e) {
       log.warn("Failed to clone cached reference module [{}], falling back to re-parse: {}",
               original.getArgStr(), e.getMessage(), e);
       return null;
