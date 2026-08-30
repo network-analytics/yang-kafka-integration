@@ -21,6 +21,8 @@ public class YangSchemaProviderMetrics {
   private final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
 
   private final AtomicLong totalRequestCount = new AtomicLong();
+  private final AtomicLong mainStatementCount = new AtomicLong();
+  private final AtomicLong referenceStatementCount = new AtomicLong();
 
   private final AtomicLong referenceCacheEvictionCount = new AtomicLong();
   private final AtomicLong parsedSchemaCacheEvictionCount = new AtomicLong();
@@ -63,11 +65,6 @@ public class YangSchemaProviderMetrics {
       public long getSize() {
         return sizeSupplier.getAsInt();
       }
-
-      @Override
-      public long getMaxSize() {
-        return maxSize;
-      }
     };
     registerMBean(name, mbean, CacheSizeMetricsMBean.class, false);
   }
@@ -90,6 +87,14 @@ public class YangSchemaProviderMetrics {
 
   public void recordParsedSchemaCacheMiss() {
     parsedSchemaCacheMissCount.incrementAndGet();
+  }
+
+  public void recordMainStatementCount(long count) {
+    mainStatementCount.addAndGet(count);
+  }
+
+  public void recordReferenceStatementCount(long count) {
+    referenceStatementCount.addAndGet(count);
   }
 
   public void recordReferenceCacheHit() {
@@ -147,6 +152,10 @@ public class YangSchemaProviderMetrics {
   public interface YangSchemaProviderMetricsMBean {
     long getTotalRequestCount();
 
+    long getMainStatementCount();
+
+    long getReferenceStatementCount();
+
     long getReferenceCacheEvictionCount();
 
     long getParsedSchemaCacheEvictionCount();
@@ -171,8 +180,6 @@ public class YangSchemaProviderMetrics {
    */
   public interface CacheSizeMetricsMBean {
     long getSize();
-
-    long getMaxSize();
   }
 
   public interface ParseErrorMetricsMBean {
@@ -184,6 +191,16 @@ public class YangSchemaProviderMetrics {
     @Override
     public long getTotalRequestCount() {
       return totalRequestCount.get();
+    }
+
+    @Override
+    public long getMainStatementCount() {
+      return mainStatementCount.get();
+    }
+
+    @Override
+    public long getReferenceStatementCount() {
+      return referenceStatementCount.get();
     }
 
     @Override

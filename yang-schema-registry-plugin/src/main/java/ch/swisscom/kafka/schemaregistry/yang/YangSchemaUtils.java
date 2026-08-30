@@ -59,6 +59,17 @@ public class YangSchemaUtils {
     return parseYangString(schema.getSubject(), schema.getSchema(), context);
   }
 
+  // TODO: disable it in production.
+  public static long countStatements(YangStatement statement) {
+    long count = 1;
+    for (YangElement subElement : statement.getSubElements()) {
+      if (subElement instanceof YangStatement) {
+        count += countStatements((YangStatement) subElement);
+      }
+    }
+    return count;
+  }
+
   public static YangSchema copyOf(YangSchema schema) {
     return schema.copy();
   }

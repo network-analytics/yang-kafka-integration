@@ -186,6 +186,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             context.addModule(clone);
             addedModule = clone;
             metrics.recordReferenceCacheHit();
+            metrics.recordReferenceStatementCount(YangSchemaUtils.countStatements(clone));
           } else {
             log.warn("Cached reference module {} could not be cloned - falling back to full re-parse it; " +
                     "it will be re-cached if re-parse succeeds", refName);
@@ -203,6 +204,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             } else {
               log.debug("Reference {} could not be cloned - will always be re-parsed", refName);
             }
+            metrics.recordReferenceStatementCount(YangSchemaUtils.countStatements(addedModule));
           }
         }
       }
@@ -211,6 +213,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       Module rootModule = YangSchemaUtils.parseSchema(schema, context);
 
       metrics.recordParsedSchemaCacheMiss();
+      metrics.recordMainStatementCount(YangSchemaUtils.countStatements(rootModule));
 
       // cheap check before context.validation()
       for (Import imported : rootModule.getImports()) {
