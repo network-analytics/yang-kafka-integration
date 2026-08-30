@@ -311,7 +311,7 @@ public class YangSchema implements ParsedSchema {
       }
     }
     // todo: this may need some additional logic in yangkit
-    this.context.clearBuildResult();
+    // this.context.clearBuildResult();
   }
 
   public YangDataDocument validate(JsonNode jsonNode) throws YangCodecException {
