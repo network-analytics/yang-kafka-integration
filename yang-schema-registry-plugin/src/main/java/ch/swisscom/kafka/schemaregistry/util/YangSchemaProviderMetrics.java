@@ -21,7 +21,7 @@ public class YangSchemaProviderMetrics {
   private final MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
 
   private final AtomicLong totalRequestCount = new AtomicLong();
-  private final AtomicLong mainStatementCount = new AtomicLong();
+  private final AtomicLong schemaStatementCount = new AtomicLong();
   private final AtomicLong referenceStatementCount = new AtomicLong();
 
   private final AtomicLong referenceCacheEvictionCount = new AtomicLong();
@@ -89,8 +89,8 @@ public class YangSchemaProviderMetrics {
     parsedSchemaCacheMissCount.incrementAndGet();
   }
 
-  public void recordMainStatementCount(long count) {
-    mainStatementCount.addAndGet(count);
+  public void recordSchemaStatementCount(long count) {
+    schemaStatementCount.addAndGet(count);
   }
 
   public void recordReferenceStatementCount(long count) {
@@ -152,7 +152,7 @@ public class YangSchemaProviderMetrics {
   public interface YangSchemaProviderMetricsMBean {
     long getTotalRequestCount();
 
-    long getMainStatementCount();
+    long getSchemaStatementCount();
 
     long getReferenceStatementCount();
 
@@ -194,8 +194,8 @@ public class YangSchemaProviderMetrics {
     }
 
     @Override
-    public long getMainStatementCount() {
-      return mainStatementCount.get();
+    public long getSchemaStatementCount() {
+      return schemaStatementCount.get();
     }
 
     @Override
