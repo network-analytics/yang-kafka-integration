@@ -34,6 +34,8 @@ public class YangSchemaProviderMetrics {
   private final AtomicLong compatibleCount = new AtomicLong();
   private final AtomicLong incompatibleCount = new AtomicLong();
 
+  private final AtomicLong schemaStatementCount = new AtomicLong();
+
   private final ConcurrentHashMap<ParseErrorReason, AtomicLong> parseErrorCounts = new ConcurrentHashMap<>();
 
   public YangSchemaProviderMetrics(
@@ -108,6 +110,11 @@ public class YangSchemaProviderMetrics {
     }
   }
 
+  public void recordSchemaStatementCount(long count) {
+    schemaStatementCount.addAndGet(count);
+  }
+
+
   public void recordParseError(ParseErrorReason reason) {
     getOrRegisterParseErrorCounter(reason).incrementAndGet();
   }
@@ -162,6 +169,8 @@ public class YangSchemaProviderMetrics {
     long getCompatibleCount();
 
     long getIncompatibleCount();
+
+    long getSchemaStatementCount();
   }
 
   /**
@@ -225,6 +234,11 @@ public class YangSchemaProviderMetrics {
     @Override
     public long getIncompatibleCount() {
       return incompatibleCount.get();
+    }
+
+    @Override
+    public long getSchemaStatementCount() {
+      return schemaStatementCount.get();
     }
   }
 }
