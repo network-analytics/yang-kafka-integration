@@ -21,12 +21,16 @@ import ch.swisscom.kafka.schemaregistry.util.ParseErrorReason;
 import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import io.confluent.kafka.schemaregistry.AbstractSchemaProvider;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
+import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
@@ -59,10 +63,11 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  private record ReferenceCacheKey(String refName, String refSchema) {}
-  private final BoundedCache<ReferenceCacheKey, Module> referenceCache;
+  private final BoundedCache<String, Module> referenceCache;
 
-  private record ParsedSchemaCacheKey(String subject, String schemaString, List<SchemaReference> references) {}
+  private record ParsedSchemaCacheKey(String schemaString,
+                                      List<SchemaReference> references,
+                                      SortedMap<String, SortedSet<String>> tags) {}
   private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
 
   private YangSchemaProviderMetrics metrics;
@@ -140,11 +145,19 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     return YangSchema.TYPE;
   }
 
+  private static SortedMap<String, SortedSet<String>> extractTags(Schema schema) {
+    Metadata metadata = schema.getMetadata();
+    if (metadata == null || metadata.getTags() == null) {
+      return Collections.emptySortedMap();
+    }
+    return metadata.getTags();
+  }
+
   @Override
   public ParsedSchema parseSchemaOrElseThrow(Schema schema, boolean isNew, boolean normalize) {
     metrics.recordRequest();
 
-    ParsedSchemaCacheKey cacheKey = new ParsedSchemaCacheKey(schema.getSubject(), schema.getSchema(), schema.getReferences());
+    ParsedSchemaCacheKey cacheKey = new ParsedSchemaCacheKey(schema.getSchema(), schema.getReferences(), extractTags(schema));
 
     AtomicBoolean cacheHit = new AtomicBoolean(true);
     YangSchema parsedYangSchema = parsedSchemaCache.getOrCreate(cacheKey, () -> {
@@ -176,10 +189,9 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       for (Map.Entry<String, String> entry : resolvedReferences.entrySet()) {
         String refName = entry.getKey();
         String refSchema = entry.getValue();
-        ReferenceCacheKey referenceCacheKey = new ReferenceCacheKey(refName, refSchema);
 
         Module addedModule = null;
-        Module cachedModule = referenceCache.get(referenceCacheKey);
+        Module cachedModule = referenceCache.get(refSchema);
         if (cachedModule != null) {
           Module clone = safeClone(cachedModule);
           if (clone != null) {
@@ -200,7 +212,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           if (addedModule != null) {
             Module clone = safeClone(addedModule);
             if (clone != null) {
-              referenceCache.put(referenceCacheKey, clone);
+              referenceCache.put(refSchema, clone);
             } else {
               log.debug("Reference {} could not be cloned - will always be re-parsed", refName);
             }
