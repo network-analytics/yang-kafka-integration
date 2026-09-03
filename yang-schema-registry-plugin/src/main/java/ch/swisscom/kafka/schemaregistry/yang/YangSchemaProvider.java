@@ -16,24 +16,15 @@
 
 package ch.swisscom.kafka.schemaregistry.yang;
 
-import ch.swisscom.kafka.schemaregistry.util.BoundedCache;
 import ch.swisscom.kafka.schemaregistry.util.ParseErrorReason;
 import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
 import io.confluent.kafka.schemaregistry.AbstractSchemaProvider;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
-import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Schema;
 import java.io.File;
 import java.net.URL;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
-import java.util.SortedMap;
-import java.util.SortedSet;
-import java.util.concurrent.atomic.AtomicBoolean;
 
-import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import org.dom4j.Document;
 import org.dom4j.io.SAXReader;
 import org.slf4j.Logger;
@@ -43,7 +34,6 @@ import org.yangcentral.yangkit.comparator.CompatibilityRules;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Import;
 import org.yangcentral.yangkit.model.api.stmt.Module;
-//import org.yangcentral.yangkit.model.api.stmt.YangStatementCloneException;
 import org.yangcentral.yangkit.parser.YangParserException;
 import org.yangcentral.yangkit.register.YangStatementImplRegister;
 import org.yangcentral.yangkit.register.YangStatementRegister;
@@ -52,28 +42,10 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
 
   public static final String YANG_COMPARATOR_RULES_CONFIG = "yang.comparator.rules.path";
 
-  public static final String YANG_REFERENCE_CACHE_MAX_SIZE = "yang.reference.cache.max.size";
-  public static final String YANG_PARSED_SCHEMA_CACHE_MAX_SIZE = "yang.parsed.schema.cache.max.size";
-  public static final String YANG_CACHE_IDLE_TIMEOUT_MINUTES = "yang.cache.idle.timeout.minutes";
-
-  private static final int DEFAULT_YANG_PARSED_SCHEMA_CACHE_MAX_SIZE = 2000;
-  private static final int DEFAULT_YANG_REFERENCE_CACHE_MAX_SIZE = 0;
-  private static final int DEFAULT_YANG_CACHE_IDLE_TIMEOUT_MINUTES = 60;
-
   private static final String YANG_COMPARATOR_DEFAULT_RULES = "default-rules.xml";
   private static final Logger log = LoggerFactory.getLogger(YangSchemaProvider.class);
 
-  private final BoundedCache<String, Module> referenceCache;
-
-  private record ParsedSchemaCacheKey(String schemaString,
-                                      List<SchemaReference> references,
-                                      SortedMap<String, SortedSet<String>> tags) {}
-  private final BoundedCache<ParsedSchemaCacheKey, YangSchema> parsedSchemaCache;
-
-  private final int referenceCacheMaxSize;
-  private final int parsedSchemaCacheMaxSize;
-
-  private YangSchemaProviderMetrics metrics;
+  private final YangSchemaProviderMetrics metrics;
 
   public YangSchemaProvider() {
     URL inputStream = YangSchema.class.getClassLoader().getResource(YANG_COMPARATOR_DEFAULT_RULES);
@@ -86,40 +58,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     }
     YangStatementImplRegister.registerImpl();
 
-    this.referenceCacheMaxSize = parseIntProperty(
-            YANG_REFERENCE_CACHE_MAX_SIZE, DEFAULT_YANG_REFERENCE_CACHE_MAX_SIZE);
-    this.parsedSchemaCacheMaxSize = parseIntProperty(
-            YANG_PARSED_SCHEMA_CACHE_MAX_SIZE, DEFAULT_YANG_PARSED_SCHEMA_CACHE_MAX_SIZE);
-    long cacheIdleTimeoutMillis = Duration.ofMinutes(
-            parseIntProperty(YANG_CACHE_IDLE_TIMEOUT_MINUTES, DEFAULT_YANG_CACHE_IDLE_TIMEOUT_MINUTES)).toMillis();
-
-    this.referenceCache = new BoundedCache<>(
-            referenceCacheMaxSize,
-            cacheIdleTimeoutMillis,
-            () -> metrics.recordReferenceCacheEviction());
-
-    this.parsedSchemaCache = new BoundedCache<>(
-            parsedSchemaCacheMaxSize,
-            cacheIdleTimeoutMillis,
-            () -> metrics.recordParsedSchemaCacheEviction());
-
-    this.metrics = new YangSchemaProviderMetrics(
-            referenceCache::size, referenceCacheMaxSize,
-            parsedSchemaCache::size, parsedSchemaCacheMaxSize);
-  }
-
-  private static int parseIntProperty(String propertyName, int defaultValue) {
-    String value = System.getProperty(propertyName);
-    if (value == null) {
-      return defaultValue;
-    }
-    try {
-      return Integer.parseInt(value.trim());
-    } catch (NumberFormatException e) {
-      log.warn("Invalid value for -D{}: '{}', falling back to default {}",
-          propertyName, value, defaultValue);
-      return defaultValue;
-    }
+    this.metrics = new YangSchemaProviderMetrics(() -> 0, 0, () -> 0, 0);
   }
 
   @Override
@@ -148,35 +87,10 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     return YangSchema.TYPE;
   }
 
-  private static SortedMap<String, SortedSet<String>> extractTags(Schema schema) {
-    Metadata metadata = schema.getMetadata();
-    if (metadata == null || metadata.getTags() == null) {
-      return Collections.emptySortedMap();
-    }
-    return metadata.getTags();
-  }
-
   @Override
   public ParsedSchema parseSchemaOrElseThrow(Schema schema, boolean isNew, boolean normalize) {
     metrics.recordRequest();
-
-    if (parsedSchemaCacheMaxSize <= 0) {
-      return parseYangSchema(schema);
-    }
-
-    ParsedSchemaCacheKey cacheKey = new ParsedSchemaCacheKey(schema.getSchema(), schema.getReferences(), extractTags(schema));
-
-    AtomicBoolean cacheHit = new AtomicBoolean(true);
-    YangSchema parsedYangSchema = parsedSchemaCache.getOrCreate(cacheKey, () -> {
-      cacheHit.set(false);
-      return parseYangSchema(schema);
-    });
-
-    if (cacheHit.get()) {
-      log.debug("Re-using cached parsed schema: {}", schema.getSubject());
-      metrics.recordParsedSchemaCacheHit();
-    }
-    return parsedYangSchema;
+    return parseYangSchema(schema);
   }
 
   private YangSchema parseYangSchema(Schema schema) {
@@ -197,41 +111,12 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         String refName = entry.getKey();
         String refSchema = entry.getValue();
 
-        Module addedModule = null;
-        Module cachedModule = referenceCache.get(refSchema);
-        if (cachedModule != null) {
-          Module clone = safeClone(cachedModule);
-          if (clone != null) {
-            context.addModule(clone);
-            addedModule = clone;
-            metrics.recordReferenceCacheHit();
-            metrics.recordReferenceStatementCount(YangSchemaUtils.countStatements(clone));
-          } else {
-            log.warn("Cached reference module {} could not be cloned - falling back to full re-parse it; " +
-                    "it will be re-cached if re-parse succeeds", refName);
-          }
-        }
-
-        if (addedModule == null) {
-          log.debug("Parsing reference module from raw: {}, refSchema: {}", refName, refSchema);
-          metrics.recordReferenceCacheMiss();
-          addedModule = YangSchemaUtils.parseYangString(refName, refSchema, context);
-          if (addedModule != null && this.referenceCacheMaxSize > 0) {
-            Module clone = safeClone(addedModule);
-            if (clone != null) {
-              referenceCache.put(refSchema, clone);
-            } else {
-              log.debug("Reference {} could not be cloned - will always be re-parsed", refName);
-            }
-            metrics.recordReferenceStatementCount(YangSchemaUtils.countStatements(addedModule));
-          }
-        }
+        log.debug("Parsing reference module from raw: {}, refSchema: {}", refName, refSchema);
+        YangSchemaUtils.parseYangString(refName, refSchema, context);
       }
 
       // Parse main schema
       Module rootModule = YangSchemaUtils.parseSchema(schema, context);
-
-      metrics.recordParsedSchemaCacheMiss();
       metrics.recordSchemaStatementCount(YangSchemaUtils.countStatements(rootModule));
 
       // cheap check before context.validation()
@@ -242,7 +127,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         }
       }
 
-      // added/cached module may be polluted, therefore, we do a safeClone beforehand.
       var result = context.validate();
 
       if (!result.isOk()) {
@@ -260,9 +144,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
           metrics.recordParseError(ParseErrorReason.VALIDATION_ERROR);
         }
       }
-      context.getParseResult().clear();
-      context.clearValidateResult();
-//      context.clearBuildResult();
 
       return new YangSchema(schema.getSchema(), context, rootModule, schema.getReferences(), metrics);
     } catch (YangParserException e) {
@@ -278,17 +159,6 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
       log.error("Unexpected Error parsing Yang Schema for subject {}", schema.getSubject(), e);
       metrics.recordParseError(ParseErrorReason.UNEXPECTED);
       throw e;
-    }
-  }
-
-  private static Module safeClone(Module original) {
-    try {
-      return (Module) original.clone();
-//    } catch (YangStatementCloneException e) {
-    } catch (Exception e) {
-      log.warn("Failed to clone cached reference module [{}], falling back to re-parse: {}",
-              original.getArgStr(), e.getMessage(), e);
-      return null;
     }
   }
 }
