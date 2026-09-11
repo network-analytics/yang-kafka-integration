@@ -61,6 +61,11 @@ public class KafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaYangJsonSch
 
   @Override
   public YangDataDocument deserialize(String topic, Headers headers, byte[] bytes) {
+    // No blanket catch here. Unexpected deserialization failures are propagated to the Kafka
+    // consumer, which can route them via a consumer ExceptionHandler / dead-letter topic.
+    // Intentional
+    // "skip" cases (e.g. schema not yet built) are handled inside the deserializer by returning
+    // null.
     return deserialize(false, topic, isKey, headers, bytes);
   }
 

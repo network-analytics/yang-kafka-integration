@@ -198,6 +198,13 @@
                                         <exclude>plugins.json</exclude>
                                     </excludes>
                                 </filter>
+                                <!-- Exclude rules.xml from other jars to prevent overwriting our default-rules.xml -->
+                                <filter>
+                                    <artifact>commons-validator:commons-validator</artifact>
+                                    <excludes>
+                                        <exclude>rules.xml</exclude>
+                                    </excludes>
+                                </filter>
                             </filters>
                             <transformers>
                                 <transformer
@@ -241,12 +248,9 @@
                                     <exclude>org.junit.platform:*</exclude>
                                 </excludes>
                             </artifactSet>
-                            <relocations>
-                                <relocation>
-                                    <pattern>io.github.yang-central.yangkit</pattern>
-                                    <shadedPattern>shaded.io.github.yang-central.yangkit</shadedPattern>
-                                </relocation>
-                            </relocations>
+                            <!-- No relocations needed: io.github.yang-central.yangkit is a Maven
+                                 groupId (contains hyphens), not a Java package, so ASM cannot
+                                 relocate it and it would crash the shade plugin. -->
                         </configuration>
                     </execution>
                 </executions>
