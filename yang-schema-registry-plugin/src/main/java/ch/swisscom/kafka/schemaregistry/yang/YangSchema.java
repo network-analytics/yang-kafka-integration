@@ -259,7 +259,6 @@ public class YangSchema implements ParsedSchema {
     YangDataDocument yangDataDocument =
         new YangDataDocumentJsonParser(schemaContext).parse(jsonNode, validatorResultBuilder);
     yangDataDocument.update();
-    log.debug("YANG Encoded Message: {}", jsonNode);
     ValidatorResult parseResult = validatorResultBuilder.build();
 
     if (!parseResult.isOk()) {
@@ -281,7 +280,6 @@ public class YangSchema implements ParsedSchema {
               .collect(Collectors.joining("\n")));
       throw new YangCodecException("YANG encoded message is not valid");
     }
-    log.debug("Message Consumed: {}", jsonNode);
     return yangDataDocument;
   }
 

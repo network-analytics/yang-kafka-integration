@@ -56,8 +56,9 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
   protected boolean validate;
 
   /**
-   * Non-null when {@code yang.library.cache.path} is configured. When present, deserialization uses
-   * YANG Library (RFC 8525) with full deviation + feature support. When null, the legacy
+   * Non-null when {@code yang.library.cache.path} is set to a non-blank value. When present,
+   * deserialization uses YANG Library (RFC 8525) with full deviation + feature support. When the
+   * configured value is null, empty, or blank, this field stays null and the legacy
    * Schema-Registry-only path is used.
    */
   private YangLibraryCacheBuilder yangLibraryCacheBuilder;
@@ -283,12 +284,11 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       log.debug("[SUCCESS] schema-id={} deserialized OK", schemaId);
       return doc;
     } catch (Exception e) {
-      log.error(
-          "Error deserializing YANG JSON via YANG Library for schema-id={}: {}",
-          schemaId,
-          e.getMessage(),
-          e);
-      return null;
+      // Unexpected failure — propagate so the Kafka consumer can handle it (consumer
+      // ExceptionHandler / dead-letter topic) instead of silently dropping the record. Intentional
+      // "skip" cases (schema not yet built, failed validation) already return null above.
+      log.error("Error deserializing YANG JSON via YANG Library for schema-id={}", schemaId, e);
+      throw e instanceof RuntimeException ? (RuntimeException) e : new RuntimeException(e);
     }
   }
 
@@ -372,14 +372,18 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       }
       return yangDataDocument;
     } catch (InterruptedIOException e) {
-      log.warn("Timeout deserializing YANG-JSON message for id {}: {}", id, e.getMessage());
-      return null;
-    } catch (IOException | RuntimeException e) {
-      log.warn("Error deserializing YANG-JSON message for id {}: {}", id, e.getMessage());
-      return null;
+      log.error("Timeout deserializing YANG-JSON message for id {} (topic '{}')", id, topic, e);
+      throw new RuntimeException("Timeout deserializing YANG-JSON message for id " + id, e);
+    } catch (IOException e) {
+      log.error("Error deserializing YANG-JSON message for id {} (topic '{}')", id, topic, e);
+      throw new RuntimeException("Error deserializing YANG-JSON message for id " + id, e);
     } catch (RestClientException e) {
-      log.warn("Error retrieving YANG schema for id {}: {}", id, e.getMessage());
-      return null;
+      log.error("Error retrieving YANG schema for id {} (topic '{}')", id, topic, e);
+      throw new RuntimeException("Error retrieving YANG schema for id " + id, e);
+    } catch (RuntimeException e) {
+      // Unexpected failure — propagate as-is so the Kafka consumer can handle it
+      // (consumer ExceptionHandler / dead-letter topic) instead of silently dropping the record.
+      throw e;
     } finally {
       postOp(payload);
     }

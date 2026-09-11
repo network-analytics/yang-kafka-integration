@@ -1,6 +1,4 @@
 /*
- * Copyright 2025 INSA Lyon.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -21,6 +19,7 @@ import io.confluent.kafka.schemaregistry.client.rest.RestService;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
 import java.io.File;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -39,8 +38,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.parser.YangYinParser;
 import org.yangcentral.yangkit.register.YangStatementImplRegister;
@@ -83,19 +92,36 @@ public class YangLibraryCacheBuilder {
 
   private static final Logger log = LoggerFactory.getLogger(YangLibraryCacheBuilder.class);
 
-  // Regex patterns — only what is still needed
-  private static final Pattern NAMESPACE_PATTERN = Pattern.compile("\\bnamespace\\s+\"([^\"]+)\"");
+  // Regex patterns — only what is still needed.
+  // The trailing ';' anchors each match to a real statement: a keyword appearing inside a
+  // description/comment string (which is never followed by ';') is skipped, so a stale keyword in
+  // prose before the real statement cannot be mis-extracted.
+  private static final Pattern NAMESPACE_PATTERN = Pattern.compile("\\bnamespace\\s+\"([^\"]+)\";");
   private static final Pattern REVISION_PATTERN =
-      Pattern.compile("\\brevision\\s+\"(\\d{4}-\\d{2}-\\d{2})\"");
+      Pattern.compile("\\brevision\\s+\"(\\d{4}-\\d{2}-\\d{2})\";");
   // Matches 'module foo {' or 'submodule foo {' to extract module name from raw YANG text
   private static final Pattern MODULE_NAME_PATTERN =
       Pattern.compile("\\b(?:module|submodule)\\s+([\\S]+)\\s*\\{");
 
+  // Bounding for the in-memory caches. The set of live schema-ids is expected to be small
+  // (a handful per consumer), so these caps are generous safety limits that cap memory in the
+  // unlikely event of a runaway/growing id space rather than tuning knobs.
+  private static final int MAX_CACHED_CONTEXTS = 100;
+  // How long a schema-id is blacklisted after a build failure before we retry (previously the
+  // blacklist was permanent — a transient SR outage would keep the id dead until a restart).
+  private static final long FAILED_SCHEMA_RETRY_MILLIS = 5 * 60 * 1000L;
+  // In-progress async schema builds — ensures only one build per schema-id across all instances.
+  // Normally only the ids currently building are present; the guard is a defensive cap so a
+  // pathological id flood cannot grow this map without bound.
+  private static final int MAX_PENDING_BUILDS = 1000;
+
   // In-memory context cache – avoids re-parsing on every message (static = shared across instances)
-  private static final Map<Integer, YangSchemaContext> contextCache = new ConcurrentHashMap<>();
-  // Schema-ids that permanently failed to build (static = shared across instances)
-  private static final Set<Integer> failedSchemaIds =
-      Collections.newSetFromMap(new ConcurrentHashMap<>());
+  private static final Map<Integer, YangSchemaContext> contextCache =
+      newBoundedLruMap(MAX_CACHED_CONTEXTS);
+  // Schema-ids that recently failed to build, mapped to the time (ms epoch) of failure so we can
+  // retry once the TTL elapses (static = shared across instances). Replaces a permanent blacklist.
+  private static final Map<Integer, Long> failedSchemaTimestamps =
+      newBoundedLruMap((int) (FAILED_SCHEMA_RETRY_MILLIS / 1000) + 10);
   // In-progress async schema builds — ensures only one build per schema-id across all instances
   private static final ConcurrentHashMap<Integer, CompletableFuture<YangSchemaContext>>
       pendingBuilds = new ConcurrentHashMap<>();
@@ -124,6 +150,43 @@ public class YangLibraryCacheBuilder {
     }
   }
 
+  /**
+   * Creates a thread-safe LRU-bounded map. Backed by a {@link java.util.LinkedHashMap} with
+   * access-order eviction (oldest-accessed entry evicted past {@code maxSize}), wrapped in {@link
+   * Collections#synchronizedMap} so it is safe across the consumer threads and the builder thread.
+   * Dependency-free so it can be used safely in the shaded SR plugin.
+   */
+  private static <K, V> Map<K, V> newBoundedLruMap(int maxSize) {
+    LinkedHashMap<K, V> lru =
+        new LinkedHashMap<K, V>(16, 0.75f, true) {
+          @Override
+          protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
+            return size() > maxSize;
+          }
+        };
+    return Collections.synchronizedMap(lru);
+  }
+
+  /**
+   * Returns true if {@code schemaId} is currently blacklisted (failed within the retry window).
+   * Entries older than {@link #FAILED_SCHEMA_RETRY_MILLIS} are treated as cleared so the build can
+   * be retried — a transient SR outage no longer keeps the id dead until a restart.
+   */
+  private static boolean isFailed(int schemaId) {
+    Long ts = failedSchemaTimestamps.get(schemaId);
+    if (ts == null) return false;
+    if (System.currentTimeMillis() - ts >= FAILED_SCHEMA_RETRY_MILLIS) {
+      failedSchemaTimestamps.remove(schemaId);
+      return false;
+    }
+    return true;
+  }
+
+  /** Records a build failure for {@code schemaId}, stamping it with the current time. */
+  private static void markFailed(int schemaId) {
+    failedSchemaTimestamps.put(schemaId, System.currentTimeMillis());
+  }
+
   private final SchemaRegistryClient schemaRegistry;
   private final File cacheRoot;
 
@@ -149,8 +212,23 @@ public class YangLibraryCacheBuilder {
     // Fast path: already cached — no blocking, instant return
     YangSchemaContext cached = contextCache.get(schemaId);
     if (cached != null) return cached;
-    if (failedSchemaIds.contains(schemaId)) {
-      log.warn("[Cache] Skipping schema-id={} (previously failed to build)", schemaId);
+    // Respect the failure blacklist, but only for the retry window — after
+    // FAILED_SCHEMA_RETRY_MILLIS
+    // we allow a retry so a transient SR outage does not keep the id dead until a restart.
+    if (isFailed(schemaId)) {
+      log.warn(
+          "[Cache] Skipping schema-id={} (previously failed to build, retry after {}ms)",
+          schemaId,
+          FAILED_SCHEMA_RETRY_MILLIS);
+      return null;
+    }
+    // Defensive cap: if somehow too many builds are in flight, do not add another (avoids an
+    // unbounded pendingBuilds map). The normal path never hits this.
+    if (pendingBuilds.size() >= MAX_PENDING_BUILDS) {
+      log.warn(
+          "[Cache] Too many in-flight builds ({}); not starting build for schema-id={}",
+          pendingBuilds.size(),
+          schemaId);
       return null;
     }
     // Start async build if not already in progress (computeIfAbsent is atomic — only one build
@@ -173,7 +251,7 @@ public class YangLibraryCacheBuilder {
                       "[Cache] Async schema build complete for schema-id={} in {}ms", id, elapsed);
                   future.complete(ctx);
                 } catch (Exception e) {
-                  failedSchemaIds.add(id);
+                  markFailed(id);
                   log.error(
                       "[Cache] Async schema build failed for schema-id={}: {}",
                       id,
@@ -245,7 +323,7 @@ public class YangLibraryCacheBuilder {
     //    All transitively fetched modules (imports, augmentations, deviations)
     //    are loaded together — yangkit applies everything automatically.
     Map<String, ModuleData> allModules = fetchAllModules(schemaId, subject);
-    String rootModuleName = allModules.keySet().iterator().next(); // first entry = root
+    String rootModuleName = allModules.values().iterator().next().name; // first entry = root
 
     // 2. Write each module's YANG text to modules/*.yang
     Map<String, File> moduleFiles = writeYangFiles(allModules, modulesDir);
@@ -259,10 +337,10 @@ public class YangLibraryCacheBuilder {
         new ArrayList<>(); // [name, revision, namespace, location, features...]
 
     for (Map.Entry<String, ModuleData> entry : allModules.entrySet()) {
-      String name = entry.getKey();
       ModuleData data = entry.getValue();
+      String name = data.name;
 
-      String revision = extractRevision(data.yangText);
+      String revision = data.revision;
       String namespace = extractNamespace(data.yangText);
       if (namespace == null) namespace = "";
 
@@ -309,44 +387,55 @@ public class YangLibraryCacheBuilder {
   }
 
   /**
-   * Builds a minimal RFC 8525 yang-library XML string directly. Each entry array: [0]=name,
-   * [1]=revision, [2]=namespace, [3]=location, [4+]=features
+   * Builds a minimal RFC 8525 yang-library XML string using the JDK DOM API instead of
+   * hand-building/escaping the string. Each entry array: [0]=name, [1]=revision, [2]=namespace,
+   * [3]=location, [4+]=features.
    */
-  private String buildYangLibXml(List<String[]> moduleEntries, String contentId) {
+  private String buildYangLibXml(List<String[]> moduleEntries, String contentId)
+      throws TransformerException, ParserConfigurationException {
     String ns = "urn:ietf:params:xml:ns:yang:ietf-yang-library";
-    StringBuilder sb = new StringBuilder();
-    sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    sb.append("<yang-library xmlns=\"").append(ns).append("\">\n");
-    sb.append("  <module-set>\n");
-    sb.append("    <name>default</name>\n");
+    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+    dbf.setNamespaceAware(true);
+    Document doc = dbf.newDocumentBuilder().newDocument();
+
+    Element root = doc.createElementNS(ns, "yang-library");
+    doc.appendChild(root);
+
+    Element moduleSet = doc.createElementNS(ns, "module-set");
+    Element setName = doc.createElementNS(ns, "name");
+    setName.setTextContent("default");
+    moduleSet.appendChild(setName);
     for (String[] m : moduleEntries) {
-      sb.append("    <module>\n");
-      sb.append("      <name>").append(escape(m[0])).append("</name>\n");
+      Element module = doc.createElementNS(ns, "module");
+      appendElement(doc, module, "name", m[0]);
       if (!m[1].isEmpty()) {
-        sb.append("      <revision>").append(escape(m[1])).append("</revision>\n");
+        appendElement(doc, module, "revision", m[1]);
       }
-      sb.append("      <namespace>").append(escape(m[2])).append("</namespace>\n");
-      // features (index 4 onwards)
+      appendElement(doc, module, "namespace", m[2]);
       for (int i = 4; i < m.length; i++) {
-        sb.append("      <feature>").append(escape(m[i])).append("</feature>\n");
+        appendElement(doc, module, "feature", m[i]);
       }
-      sb.append("      <location>").append(escape(m[3])).append("</location>\n");
-      sb.append("    </module>\n");
+      appendElement(doc, module, "location", m[3]);
+      moduleSet.appendChild(module);
     }
-    sb.append("  </module-set>\n");
-    sb.append("  <content-id>").append(escape(contentId)).append("</content-id>\n");
-    sb.append("</yang-library>\n");
-    return sb.toString();
+    root.appendChild(moduleSet);
+    appendElement(doc, root, "content-id", contentId);
+
+    Transformer transformer = TransformerFactory.newInstance().newTransformer();
+    transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "no");
+    transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+    StringWriter writer = new StringWriter();
+    transformer.transform(new DOMSource(doc), new StreamResult(writer));
+    return writer.toString();
   }
 
-  /** Escapes XML special characters in text content. */
-  private String escape(String s) {
-    if (s == null) return "";
-    return s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&apos;");
+  /** Appends a namespaced child element with the given text content to {@code parent}. */
+  private void appendElement(Document doc, Element parent, String localName, String text) {
+    Element el = doc.createElementNS("urn:ietf:params:xml:ns:yang:ietf-yang-library", localName);
+    if (text != null) {
+      el.setTextContent(text);
+    }
+    parent.appendChild(el);
   }
 
   // ---------------------------------------------------------------------------
@@ -372,6 +461,7 @@ public class YangLibraryCacheBuilder {
         restService.getId(schemaId);
     String rootYangText = rootRaw.getSchemaString();
     String rootName = extractModuleName(rootYangText);
+    String rootRevision = extractRevision(rootYangText);
     log.debug("Fetched root module '{}' for schema-id={}", rootName, schemaId);
     List<SchemaReference> rootRefs =
         rootRaw.getReferences() != null ? rootRaw.getReferences() : Collections.emptyList();
@@ -381,7 +471,9 @@ public class YangLibraryCacheBuilder {
     if (!rootFeatures.isEmpty()) {
       log.debug("[Cache] Root module '{}' features: {}", rootName, rootFeatures);
     }
-    result.put(rootName, new ModuleData(rootYangText, rootTags));
+    result.put(
+        nameKey(rootName, rootRevision),
+        new ModuleData(rootName, rootRevision, rootYangText, rootTags));
 
     // BFS over all transitive references
     java.util.Queue<SchemaReference> queue = new java.util.LinkedList<>(rootRefs);
@@ -395,7 +487,11 @@ public class YangLibraryCacheBuilder {
             restService.getVersion(ref.getSubject(), ref.getVersion());
         String yangText = refSchema.getSchema();
         String modName = extractModuleName(yangText);
-        if (!result.containsKey(modName)) {
+        String modRevision = extractRevision(yangText);
+        // Key by (name, revision) so the same module name at different revisions is kept rather
+        // than silently skipped (previously keyed by name only, so a later revision was dropped).
+        String moduleKey = nameKey(modName, modRevision);
+        if (!result.containsKey(moduleKey)) {
           List<SchemaReference> refs =
               refSchema.getReferences() != null
                   ? refSchema.getReferences()
@@ -408,7 +504,7 @@ public class YangLibraryCacheBuilder {
           if (!features.isEmpty()) {
             log.debug("[Cache] Module '{}' features: {}", modName, features);
           }
-          result.put(modName, new ModuleData(yangText, tags));
+          result.put(moduleKey, new ModuleData(modName, modRevision, yangText, tags));
           queue.addAll(refs);
         }
       } catch (Exception e) {
@@ -458,16 +554,13 @@ public class YangLibraryCacheBuilder {
       throws Exception {
     Map<String, File> fileMap = new LinkedHashMap<>();
     for (Map.Entry<String, ModuleData> entry : allModules.entrySet()) {
-      String name = entry.getKey();
-      String yangText = entry.getValue().yangText;
-      String revision = extractRevision(yangText);
-      String fileName =
-          (revision != null && !revision.isEmpty())
-              ? name + "@" + revision + ".yang"
-              : name + ".yang";
+      ModuleData data = entry.getValue();
+      // entry key is already "name@revision" (or "name" when no revision) — the desired filename.
+      String fileName = entry.getKey() + ".yang";
       File yangFile = new File(modulesDir, fileName);
-      Files.writeString(yangFile.toPath(), yangText, StandardCharsets.UTF_8);
-      fileMap.put(name, yangFile);
+      Files.writeString(yangFile.toPath(), data.yangText, StandardCharsets.UTF_8);
+      // Key by bare module name so callers that look up by name still resolve.
+      fileMap.put(data.name, yangFile);
     }
     return fileMap;
   }
@@ -490,12 +583,26 @@ public class YangLibraryCacheBuilder {
   // SR Metadata helpers
   // ---------------------------------------------------------------------------
 
-  /** Internal data holder */
+  /**
+   * Builds a map key for a module that is unique per (name, revision) pair, so that the same module
+   * name at different revisions is not collapsed into a single entry.
+   */
+  private static String nameKey(String name, String revision) {
+    return revision == null || revision.isEmpty() ? name : name + "@" + revision;
+  }
+
+  /**
+   * Internal data holder. Carries the module name + revision so downstream code need not re-parse.
+   */
   private static final class ModuleData {
+    final String name;
+    final String revision;
     final String yangText;
     final Map<String, List<String>> tags;
 
-    ModuleData(String yangText, Map<String, List<String>> tags) {
+    ModuleData(String name, String revision, String yangText, Map<String, List<String>> tags) {
+      this.name = name;
+      this.revision = revision == null ? "" : revision;
       this.yangText = yangText;
       this.tags = tags;
     }

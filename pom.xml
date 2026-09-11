@@ -92,6 +92,7 @@
         <module>yang-json-schema-serde</module>
         <module>yang-cbor-schema-serializer</module>
         <module>yang-cbor-schema-serde</module>
+        <module>yang-kafka-examples</module>
     </modules>
 
     <repositories>
