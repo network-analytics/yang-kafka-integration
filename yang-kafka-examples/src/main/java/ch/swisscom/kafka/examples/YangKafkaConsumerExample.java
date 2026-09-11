@@ -12,9 +12,12 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.yangcentral.yangkit.data.api.model.YangDataDocument;
 
 /**
- * Example: consuming NetGauze YANG-Push Kafka messages using yang-kafka-integration.
+ * Example: consuming YANG Kafka messages with yang-kafka-integration.
  *
- * <p>Demonstrates two deserialization approaches:
+ * <p>This is a self-contained consumer — it has no dependency on any particular producer. It reads
+ * records from a topic, deserializes each value into a {@link YangDataDocument} via {@code
+ * KafkaYangJsonSchemaDeserializer}, and prints the result. Two deserialization approaches are
+ * shown:
  *
  * <ul>
  *   <li><b>Approach A</b> – Legacy path via Confluent Schema Registry. {@code
@@ -25,7 +28,7 @@ import org.yangcentral.yangkit.data.api.model.YangDataDocument;
  *       yang-lib.xml} on disk — no SR call needed at consumer time.
  * </ul>
  *
- * <p>NetGauze Kafka message format:
+ * <p>Expected message format:
  *
  * <pre>
  *   Header "schema-id"    = UTF-8 decimal string, e.g. "42"
@@ -33,10 +36,11 @@ import org.yangcentral.yangkit.data.api.model.YangDataDocument;
  *   Payload               = raw RFC 7951 YANG JSON (no Confluent 5-byte magic prefix)
  * </pre>
  *
- * <p>NetGauze local disk cache layout (used by Approach B):
+ * <p>Example local disk cache layout used by Approach B (path chosen by {@code
+ * yang.library.cache.path}):
  *
  * <pre>
- *   /bp2/data/yang-cache/
+ *   &lt;cache-root&gt;/
  *     schema-id-42/
  *       yang-lib.xml        RFC 8525 YANG Library XML
  *       modules/
@@ -46,20 +50,17 @@ import org.yangcentral.yangkit.data.api.model.YangDataDocument;
  *
  * <p>The yangkit-specific logic (parsing {@code yang-lib.xml} into a {@link
  * org.yangcentral.yangkit.model.api.schema.YangSchemaContext}) is handled internally by {@code
- * YangLibraryCacheBuilder} in yang-schema-registry-plugin and is demonstrated standalone in {@code
- * App5YangLibrary} in the yangkit repo.
+ * YangLibraryCacheBuilder} and is demonstrated standalone in the yangkit repo.
  */
-public class NetGauzeYangKafkaConsumerExample {
+public class YangKafkaConsumerExample {
 
   private static final String BOOTSTRAP_SERVERS = "localhost:9092";
-  private static final String TOPIC = "yang-push-telemetry";
+  private static final String TOPIC = "yang-telemetry";
   private static final String GROUP_ID = "yangkit-consumer-group";
   private static final String SCHEMA_REGISTRY_URL = "http://localhost:8081";
 
   // Default cache path — set by KafkaYangJsonSchemaDeserializerConfig
-  private static final String YANG_LIBRARY_CACHE = "/bp2/data/yang-cache";
-
-  private static final String HEADER_SCHEMA_ID = "schema-id";
+  private static final String YANG_LIBRARY_CACHE = "/tmp/yang-cache";
 
   // ─────────────────────────────────────────────────────────────────────────
   // Approach A — Legacy Confluent SR path
@@ -130,7 +131,9 @@ public class NetGauzeYangKafkaConsumerExample {
         for (ConsumerRecord<String, YangDataDocument> record : records) {
           YangDataDocument doc = record.value();
           if (doc == null) {
-            // null returned when schema is still building or parse failed
+            // null = intentionally skipped record (schema not yet built, or failed validation).
+            // Genuine deserialization failures are NOT swallowed — the deserializer propagates
+            // them, so set a DeserializationExceptionHandler / DLQ on the consumer to handle them.
             System.err.printf("[offset=%d] Record skipped (null document)%n", record.offset());
             continue;
           }

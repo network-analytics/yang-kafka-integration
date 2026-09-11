@@ -76,8 +76,9 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
   protected boolean validate;
 
   /**
-   * Non-null when {@code yang.library.cache.path} is configured. When present, deserialization uses
-   * YANG Library (RFC 8525) with full deviation + feature support. When null, the legacy
+   * Non-null when {@code yang.library.cache.path} is set to a non-blank value. When present,
+   * deserialization uses YANG Library (RFC 8525) with full deviation + feature support. When the
+   * configured value is null, empty, or blank, this field stays null and the legacy
    * Schema-Registry-only path is used.
    */
   private YangLibraryCacheBuilder yangLibraryCacheBuilder;
