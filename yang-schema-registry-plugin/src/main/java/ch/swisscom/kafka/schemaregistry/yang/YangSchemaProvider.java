@@ -145,6 +145,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
               rootModule,
               schema.getReferences(),
               resolvedReferences,
+              schema.getMetadata(),
+              schema.getRuleSet(),
               skipCompatibilityCheck);
       return yangSchema;
     } catch (YangParserException e) {

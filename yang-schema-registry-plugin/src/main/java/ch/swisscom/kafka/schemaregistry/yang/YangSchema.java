@@ -96,6 +96,8 @@ public class YangSchema implements ParsedSchema {
       Module module,
       List<SchemaReference> references,
       Map<String, String> resolvedReferences,
+      Metadata metadata,
+      RuleSet ruleSet,
       boolean skipCompatibilityCheck) {
     this(
         schemaString,
@@ -104,8 +106,8 @@ public class YangSchema implements ParsedSchema {
         module,
         references,
         resolvedReferences,
-        null,
-        null,
+        metadata,
+        ruleSet,
         skipCompatibilityCheck);
   }
 
