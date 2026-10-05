@@ -271,9 +271,7 @@ public class KafkaYangJsonSchemaSerializerTest {
         Assertions.assertDoesNotThrow(
             () -> noValidationSerializer.serialize(topic, serializerHeaders, doc));
     deserializerHeaders = getDeserializationKafkaHeader(serializerHeaders);
-    assertThrowsExactly(
-        SerializationException.class,
-        () -> deserializer.deserialize(topic, deserializerHeaders, bytes));
+    assertNull(deserializer.deserialize(topic, deserializerHeaders, bytes));
   }
 
   @Test
@@ -331,9 +329,7 @@ public class KafkaYangJsonSchemaSerializerTest {
             () -> noValidationSerializer.serialize(topic, serializerHeaders, doc));
 
     deserializerHeaders = getDeserializationKafkaHeader(serializerHeaders);
-    assertThrowsExactly(
-        SerializationException.class,
-        () -> deserializer.deserialize(topic, deserializerHeaders, bytes));
+    assertNull(deserializer.deserialize(topic, deserializerHeaders, bytes));
   }
 
   @Test
