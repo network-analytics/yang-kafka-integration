@@ -6,13 +6,13 @@
         <version>0.0.7-7.4</version>
     </parent>
     <artifactId>yang-sr-odl</artifactId>
-    <version>0.0.7-7.4</version>
     <packaging>jar</packaging>
     <name>yang-sr-odl</name>
     <description>Yang Schema Registry Plugin using OpenDaylight Yangtools</description>
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
     </properties>
 
     <dependencies>
@@ -27,14 +27,27 @@
             <version>${guava.version}</version>
             <scope>provided</scope>
         </dependency>
+
         <dependency>
             <groupId>org.opendaylight.yangtools</groupId>
-            <artifactId>yang-parser-api</artifactId>
+            <artifactId>yang-parser-rfc7950</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-parser-reactor</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-repo-fs</artifactId>
             <version>${odl.yangtools.version}</version>
         </dependency>
         <dependency>
             <groupId>org.opendaylight.yangtools</groupId>
-            <artifactId>yang-parser-impl</artifactId>
+            <artifactId>yang-repo-spi</artifactId>
             <version>${odl.yangtools.version}</version>
         </dependency>
         <dependency>
@@ -42,14 +55,60 @@
             <artifactId>yang-model-api</artifactId>
             <version>${odl.yangtools.version}</version>
         </dependency>
+
         <dependency>
-            <!-- Provides StringYangTextSource, the concrete YangTextSource implementation used
-                 to feed in-memory schema text to the parser (org.opendaylight.yangtools.yang.model.repo.api.StringYangTextSchemaSource
-                 was removed/moved here as of yangtools 12.x/13.x). -->
             <groupId>org.opendaylight.yangtools</groupId>
-            <artifactId>yang-model-spi</artifactId>
+            <artifactId>rfc7952-parser-support</artifactId>
             <version>${odl.yangtools.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>rfc8040-parser-support</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-data-codec-gson</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-data-impl</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-xpath-impl</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-source-ir</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yin-source-dom</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-data-tree-api</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-data-tree-ri</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
         <!-- For testing and mocking -->
         <dependency>
             <groupId>junit</groupId>

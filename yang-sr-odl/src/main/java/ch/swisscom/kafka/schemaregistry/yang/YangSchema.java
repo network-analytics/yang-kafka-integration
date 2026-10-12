@@ -17,6 +17,7 @@ public class YangSchema implements ParsedSchema {
     public static final String TYPE = "YANG";
 
     private final String schemaString;
+    private final String name;
     private final EffectiveModelContext context;
     private final List<SchemaReference> references;
     private final Metadata metadata;
@@ -25,6 +26,7 @@ public class YangSchema implements ParsedSchema {
 
     public YangSchema(
         String schemaString,
+        String name,
         Integer version,
         EffectiveModelContext context,
         List<SchemaReference> references,
@@ -32,6 +34,7 @@ public class YangSchema implements ParsedSchema {
         RuleSet ruleSet
     ) {
         this.schemaString = schemaString;
+        this.name = name;
         this.version = version;
         this.context = context;
         this.references = references == null ? Collections.emptyList() : Collections.unmodifiableList(references);
@@ -46,7 +49,9 @@ public class YangSchema implements ParsedSchema {
 
     @Override
     public String name() {
-        // Find the main module name, simplified version
+        if (name != null) {
+            return name;
+        }
         if (context != null && !context.getModules().isEmpty()) {
             return context.getModules().iterator().next().getName();
         }
@@ -80,17 +85,17 @@ public class YangSchema implements ParsedSchema {
 
     @Override
     public ParsedSchema copy() {
-        return new YangSchema(schemaString, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
     }
 
     @Override
     public ParsedSchema copy(Integer version) {
-        return new YangSchema(schemaString, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
     }
 
     @Override
     public ParsedSchema copy(Metadata metadata, RuleSet ruleSet) {
-        return new YangSchema(schemaString, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
     }
 
     @Override
@@ -116,12 +121,14 @@ public class YangSchema implements ParsedSchema {
         YangSchema that = (YangSchema) o;
         return Objects.equals(schemaString, that.schemaString) &&
                 Objects.equals(references, that.references) &&
+                Objects.equals(metadata, that.metadata) &&
+                Objects.equals(ruleSet, that.ruleSet) &&
                 Objects.equals(version, that.version);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(schemaString, references, version);
+        return Objects.hash(schemaString, references, metadata, ruleSet, version);
     }
 }
 

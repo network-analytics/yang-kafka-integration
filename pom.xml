@@ -73,7 +73,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <yangkit.version>1.5.0</yangkit.version>
-        <odl.yangtools.version>13.0.11</odl.yangtools.version>
+        <odl.yangtools.version>16.2.0-SNAPSHOT</odl.yangtools.version>
         <yangkit.common.version>1.1.5</yangkit.common.version>
         <yangkit.common.utils.version>1.0.3</yangkit.common.utils.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
@@ -102,10 +102,16 @@
             <id>confluent</id>
             <name>Confluent Maven repository</name>
             <url>https://packages.confluent.io/maven/</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
         <repository>
             <id>jitpack.io</id>
             <url>https://jitpack.io</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
     </repositories>
 
