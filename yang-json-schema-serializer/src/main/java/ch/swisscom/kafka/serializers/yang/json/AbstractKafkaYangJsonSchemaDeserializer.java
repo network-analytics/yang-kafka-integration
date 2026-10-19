@@ -33,9 +33,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.SerializationException;
@@ -46,8 +47,18 @@ import org.yangcentral.yangkit.model.api.codec.YangCodecException;
 
 public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaSchemaSerDe {
 
-  private final Map<Integer, Collection<SubjectVersion>> idToSubjectVersionsCache =
-      new ConcurrentHashMap<>();
+  static final int MAX_SUBJECT_VERSION_CACHE_ENTRIES = 1000;
+  static final long SUBJECT_VERSION_CACHE_TTL_MILLIS = 5 * 60 * 1000L;
+  private static final long PREFERRED_SUBJECT_REFRESH_INTERVAL_MILLIS = 30 * 1000L;
+
+  private final Map<Integer, CachedSubjectVersions> idToSubjectVersionsCache =
+      Collections.synchronizedMap(
+          new LinkedHashMap<Integer, CachedSubjectVersions>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Integer, CachedSubjectVersions> eldest) {
+              return size() > MAX_SUBJECT_VERSION_CACHE_ENTRIES;
+            }
+          });
 
   protected ObjectMapper objectMapper = Jackson.newObjectMapper();
   protected boolean validate;
@@ -207,28 +218,80 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
 
   private SubjectVersion subjectVersionForId(int id, String preferredSubject)
       throws IOException, RestClientException {
-    Collection<SubjectVersion> subjectVersions = idToSubjectVersionsCache.get(id);
-    if (subjectVersions == null) {
-      subjectVersions = schemaRegistry.getAllVersionsById(id);
-      if (subjectVersions != null) {
-        idToSubjectVersionsCache.put(id, subjectVersions);
+    long now = System.currentTimeMillis();
+    CachedSubjectVersions cached = idToSubjectVersionsCache.get(id);
+    boolean expired = cached != null && cached.isExpired(now);
+    boolean preferredSubjectMissing =
+        cached != null && preferredSubject != null && !cached.containsSubject(preferredSubject);
+    boolean refreshForPreferredSubject =
+        preferredSubjectMissing && cached.shouldRefreshForPreferredSubject(preferredSubject, now);
+
+    if (cached == null || expired || refreshForPreferredSubject) {
+      Collection<SubjectVersion> fetched = schemaRegistry.getAllVersionsById(id);
+      if (fetched != null) {
+        List<SubjectVersion> snapshot = immutableSubjectVersions(fetched);
+        cached = new CachedSubjectVersions(snapshot, now);
+        if (preferredSubject != null && !cached.containsSubject(preferredSubject)) {
+          cached.recordPreferredSubjectMiss(preferredSubject, now);
+        }
+        idToSubjectVersionsCache.put(id, cached);
+      } else if (expired) {
+        idToSubjectVersionsCache.remove(id);
+        cached = null;
+      } else if (preferredSubjectMissing) {
+        cached.recordPreferredSubjectMiss(preferredSubject, now);
       }
     }
-    if (subjectVersions == null || subjectVersions.isEmpty()) {
+
+    if (cached == null || cached.subjectVersions.isEmpty()) {
       return null;
     }
-    for (SubjectVersion subjectVersion : subjectVersions) {
+    for (SubjectVersion subjectVersion : cached.subjectVersions) {
       if (preferredSubject != null && preferredSubject.equals(subjectVersion.getSubject())) {
         return subjectVersion;
       }
     }
-    return subjectVersions.stream()
+    return cached.subjectVersions.stream()
         .filter(subjectVersion -> subjectVersion.getSubject() != null)
         .filter(subjectVersion -> subjectVersion.getVersion() != null)
         .min(
             Comparator.comparing(SubjectVersion::getSubject)
                 .thenComparing(SubjectVersion::getVersion))
         .orElse(null);
+  }
+
+  static List<SubjectVersion> immutableSubjectVersions(Collection<SubjectVersion> versions) {
+    return List.copyOf(versions);
+  }
+
+  private static final class CachedSubjectVersions {
+    private final List<SubjectVersion> subjectVersions;
+    private final long loadedAtMillis;
+    private String lastMissedPreferredSubject;
+    private long lastPreferredSubjectRefreshMillis;
+
+    private CachedSubjectVersions(List<SubjectVersion> subjectVersions, long loadedAtMillis) {
+      this.subjectVersions = subjectVersions;
+      this.loadedAtMillis = loadedAtMillis;
+    }
+
+    private boolean isExpired(long now) {
+      return now - loadedAtMillis >= SUBJECT_VERSION_CACHE_TTL_MILLIS;
+    }
+
+    private boolean containsSubject(String subject) {
+      return subjectVersions.stream().anyMatch(v -> Objects.equals(subject, v.getSubject()));
+    }
+
+    private boolean shouldRefreshForPreferredSubject(String subject, long now) {
+      return !Objects.equals(lastMissedPreferredSubject, subject)
+          || now - lastPreferredSubjectRefreshMillis >= PREFERRED_SUBJECT_REFRESH_INTERVAL_MILLIS;
+    }
+
+    private void recordPreferredSubjectMiss(String subject, long now) {
+      lastMissedPreferredSubject = subject;
+      lastPreferredSubjectRefreshMillis = now;
+    }
   }
 
   private YangSchema schemaForDeserialize(

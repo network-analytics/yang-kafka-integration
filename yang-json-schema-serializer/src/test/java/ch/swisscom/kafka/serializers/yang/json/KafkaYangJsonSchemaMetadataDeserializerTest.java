@@ -2,11 +2,13 @@ package ch.swisscom.kafka.serializers.yang.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import ch.swisscom.kafka.schemaregistry.yang.YangSchemaProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.entities.SchemaReference;
@@ -229,5 +231,72 @@ public class KafkaYangJsonSchemaMetadataDeserializerTest {
     assertNotNull(result2);
 
     assertEquals(1, callCount.get());
+  }
+
+  @Test
+  public void deserialize_subjectRegisteredAfterCacheFill_refreshesPreferredSubject()
+      throws Exception {
+    AtomicInteger callCount = new AtomicInteger();
+    SchemaRegistryClient countingClient =
+        new MockSchemaRegistryClient(Collections.singletonList(new YangSchemaProvider())) {
+          @Override
+          public synchronized Collection<SubjectVersion> getAllVersionsById(int id) {
+            callCount.incrementAndGet();
+            return super.getAllVersionsById(id);
+          }
+        };
+    KafkaYangJsonSchemaSerializer localSerializer =
+        new KafkaYangJsonSchemaSerializer(countingClient);
+    localSerializer.configure(new HashMap<>(config), true);
+    KafkaYangJsonSchemaMetadataDeserializer localDeserializer =
+        new KafkaYangJsonSchemaMetadataDeserializer(countingClient);
+    localDeserializer.configure(toStringKeyedMap(config), true);
+
+    YangDataDocument doc =
+        getRecord(
+            this.getClass()
+                .getClassLoader()
+                .getResource("serializer/json/test1/test.yang")
+                .getFile(),
+            this.getClass()
+                .getClassLoader()
+                .getResource("serializer/json/test1/valid.json")
+                .getFile());
+    Headers serializerHeaders = new RecordHeaders();
+    byte[] bytes = localSerializer.serialize(topic, serializerHeaders, doc);
+    Headers deserializerHeaders = getDeserializationKafkaHeader(serializerHeaders);
+    int schemaId =
+        ByteBuffer.wrap(
+                deserializerHeaders
+                    .lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY)
+                    .value())
+            .getInt();
+
+    YangSchemaAndValue first = localDeserializer.deserialize(topic, deserializerHeaders, bytes);
+    assertNotNull(first);
+    assertEquals(1, callCount.get());
+
+    ParsedSchema existingSchema =
+        countingClient.getSchemaBySubjectAndId(first.getSubject(), schemaId);
+    String lateSubject = "late-subject-key";
+    assertEquals(schemaId, countingClient.register(lateSubject, existingSchema));
+
+    YangSchemaAndValue lateResult =
+        localDeserializer.deserialize("late-subject", deserializerHeaders, bytes);
+
+    assertNotNull(lateResult);
+    assertEquals(lateSubject, lateResult.getSubject());
+    assertEquals(
+        2, callCount.get(), "A preferred-subject cache miss should refresh the schema-id mapping");
+  }
+
+  @Test
+  public void subjectVersionCacheStoresImmutableSnapshot() {
+    List<SubjectVersion> snapshot =
+        AbstractKafkaYangJsonSchemaDeserializer.immutableSubjectVersions(
+            new java.util.ArrayList<>(List.of(new SubjectVersion("subject", 1))));
+
+    assertThrows(
+        UnsupportedOperationException.class, () -> snapshot.add(new SubjectVersion("other", 1)));
   }
 }
