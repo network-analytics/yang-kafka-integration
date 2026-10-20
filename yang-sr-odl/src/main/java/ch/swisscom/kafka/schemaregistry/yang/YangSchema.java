@@ -114,6 +114,30 @@ public class YangSchema implements ParsedSchema {
         throw new UnsupportedOperationException("Tag modifications are not implemented");
     }
 
+    /**
+     * Same schema text, metadata and rule set, ignoring version and references. This is how the registry finds an
+     * already registered schema when a new one without a version is posted. Confluent 7.x compares
+     * {@link #rawSchema()} in {@code deepEquals}, which is a freshly built {@code EffectiveModelContext} per parse
+     * and never equal, so the text is compared instead. Confluent 8.x calls {@code equivalent} (also from
+     * {@code canLookup}); it has no {@code @Override} as 7.x does not have that method.
+     * (SR already handles reference comparisons before equivalent is called, so no need to check it here.)
+     */
+    public boolean equivalent(ParsedSchema schema) {
+        if (this == schema) {
+            return true;
+        }
+        if (schema == null || getClass() != schema.getClass()) return false;
+        return Objects.equals(canonicalString(), schema.canonicalString())
+                && Objects.equals(metadata(), schema.metadata())
+                && Objects.equals(ruleSet(), schema.ruleSet());
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public boolean deepEquals(ParsedSchema schema) {
+        return equivalent(schema);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

@@ -85,6 +85,20 @@
             <version>${odl.yangtools.version}</version>
         </dependency>
 
+        <!-- jackson-core would otherwise resolve to 2.14.x, older than the databind of the parent pom, which
+             breaks log4j's JSON/YAML configuration with Confluent 8 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson.cbor.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.opendaylight.yangtools</groupId>
+            <artifactId>yang-ir</artifactId>
+            <version>${odl.yangtools.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.opendaylight.yangtools</groupId>
             <artifactId>yang-source-ir</artifactId>
