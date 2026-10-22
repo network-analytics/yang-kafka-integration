@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.kafka.common.header.Headers;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.dom4j.DocumentException;
 import org.junit.jupiter.api.Test;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResultBuilder;
@@ -71,10 +73,10 @@ public class KafkaYangCborSerdeTest {
     KafkaYangCborSerde<YangDataDocument> serde = createConfiguredSerdeForRecordValues();
     YangDataDocument record = getRecord();
 
+    Headers headers = new RecordHeaders();
+    byte[] bytes = serde.serializer().serialize(ANY_TOPIC, headers, record);
     YangDataDocument roundTrippedRecord =
-        serde
-            .deserializer()
-            .deserialize(ANY_TOPIC, serde.serializer().serialize(ANY_TOPIC, record));
+        serde.deserializer().deserialize(ANY_TOPIC, headers, bytes);
 
     assertEquals(getJsonNode(record), getJsonNode(roundTrippedRecord));
 
