@@ -61,7 +61,7 @@ public class KafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaYangJsonSch
 
   @Override
   public YangDataDocument deserialize(String topic, Headers headers, byte[] bytes) {
-    return deserialize(false, topic, isKey, headers, bytes);
+    return (YangDataDocument) deserialize(false, topic, isKey, headers, bytes);
   }
 
   @Override

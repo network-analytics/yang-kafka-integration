@@ -22,15 +22,21 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.confluent.kafka.schemaregistry.client.rest.entities.RuleMode;
+import io.confluent.kafka.schemaregistry.client.rest.entities.SubjectVersion;
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.schemaregistry.json.jackson.Jackson;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.SerializationException;
@@ -40,6 +46,19 @@ import org.yangcentral.yangkit.data.api.model.YangDataDocument;
 import org.yangcentral.yangkit.model.api.codec.YangCodecException;
 
 public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends AbstractKafkaSchemaSerDe {
+
+  static final int MAX_SUBJECT_VERSION_CACHE_ENTRIES = 1000;
+  static final long SUBJECT_VERSION_CACHE_TTL_MILLIS = 5 * 60 * 1000L;
+  private static final long PREFERRED_SUBJECT_REFRESH_INTERVAL_MILLIS = 30 * 1000L;
+
+  private final Map<Integer, CachedSubjectVersions> idToSubjectVersionsCache =
+      Collections.synchronizedMap(
+          new LinkedHashMap<Integer, CachedSubjectVersions>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Integer, CachedSubjectVersions> eldest) {
+              return size() > MAX_SUBJECT_VERSION_CACHE_ENTRIES;
+            }
+          });
 
   protected ObjectMapper objectMapper = Jackson.newObjectMapper();
   protected boolean validate;
@@ -76,7 +95,7 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     return deserialize(includeSchemaAndVersion, topic, isKey, null, payload);
   }
 
-  protected YangDataDocument deserialize(
+  protected Object deserialize(
       boolean includeSchemaAndVersion, String topic, Boolean isKey, Headers headers, byte[] payload)
       throws SerializationException, InvalidConfigurationException {
     if (schemaRegistry == null) {
@@ -93,12 +112,24 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     try {
       byte[] serializedSchemaId =
           headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY).value();
-      id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      if (serializedSchemaId.length == 4) {
+        id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      } else {
+        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
+      }
 
       String subject =
           isKey == null || strategyUsesSchema(isKey)
               ? getContextName(topic)
               : subjectName(topic, isKey, null);
+      Integer resolvedVersion = null;
+      if (includeSchemaAndVersion) {
+        SubjectVersion subjectVersion = subjectVersionForId(id, subject);
+        if (subjectVersion != null) {
+          subject = subjectVersion.getSubject();
+          resolvedVersion = subjectVersion.getVersion();
+        }
+      }
       YangSchema schema = ((YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id));
 
       ExtendedSchema readerSchema = null;
@@ -110,8 +141,10 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       if (readerSchema != null) {
         subject = subjectName(topic, isKey, schema);
         schema = schemaForDeserialize(id, schema, subject, isKey);
-        Integer version = schemaVersion(topic, isKey, id, subject, schema, null);
-        schema = schema.copy(version);
+        if (resolvedVersion == null) {
+          resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
+        }
+        schema = schema.copy(resolvedVersion);
       }
       List<Migration> migrations = Collections.emptyList();
       if (readerSchema != null) {
@@ -160,6 +193,13 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       if (yangDataDocument == null) {
         yangDataDocument = schema.createYangDataDocument(jsonNode);
       }
+      if (includeSchemaAndVersion) {
+        if (resolvedVersion == null) {
+          resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
+        }
+        return new YangSchemaAndValue(
+            id, subject, resolvedVersion, schema.references(), yangDataDocument);
+      }
       return yangDataDocument;
     } catch (InterruptedIOException e) {
       throw new TimeoutException("Error deserializing YANG-JSON message for id " + id, e);
@@ -174,6 +214,84 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
 
   private String subjectName(String topic, boolean isKey, YangSchema schemaFromRegistry) {
     return getSubjectName(topic, isKey, null, schemaFromRegistry);
+  }
+
+  private SubjectVersion subjectVersionForId(int id, String preferredSubject)
+      throws IOException, RestClientException {
+    long now = System.currentTimeMillis();
+    CachedSubjectVersions cached = idToSubjectVersionsCache.get(id);
+    boolean expired = cached != null && cached.isExpired(now);
+    boolean preferredSubjectMissing =
+        cached != null && preferredSubject != null && !cached.containsSubject(preferredSubject);
+    boolean refreshForPreferredSubject =
+        preferredSubjectMissing && cached.shouldRefreshForPreferredSubject(preferredSubject, now);
+
+    if (cached == null || expired || refreshForPreferredSubject) {
+      Collection<SubjectVersion> fetched = schemaRegistry.getAllVersionsById(id);
+      if (fetched != null) {
+        List<SubjectVersion> snapshot = immutableSubjectVersions(fetched);
+        cached = new CachedSubjectVersions(snapshot, now);
+        if (preferredSubject != null && !cached.containsSubject(preferredSubject)) {
+          cached.recordPreferredSubjectMiss(preferredSubject, now);
+        }
+        idToSubjectVersionsCache.put(id, cached);
+      } else if (expired) {
+        idToSubjectVersionsCache.remove(id);
+        cached = null;
+      } else if (preferredSubjectMissing) {
+        cached.recordPreferredSubjectMiss(preferredSubject, now);
+      }
+    }
+
+    if (cached == null || cached.subjectVersions.isEmpty()) {
+      return null;
+    }
+    for (SubjectVersion subjectVersion : cached.subjectVersions) {
+      if (preferredSubject != null && preferredSubject.equals(subjectVersion.getSubject())) {
+        return subjectVersion;
+      }
+    }
+    return cached.subjectVersions.stream()
+        .filter(subjectVersion -> subjectVersion.getSubject() != null)
+        .filter(subjectVersion -> subjectVersion.getVersion() != null)
+        .min(
+            Comparator.comparing(SubjectVersion::getSubject)
+                .thenComparing(SubjectVersion::getVersion))
+        .orElse(null);
+  }
+
+  static List<SubjectVersion> immutableSubjectVersions(Collection<SubjectVersion> versions) {
+    return List.copyOf(versions);
+  }
+
+  private static final class CachedSubjectVersions {
+    private final List<SubjectVersion> subjectVersions;
+    private final long loadedAtMillis;
+    private String lastMissedPreferredSubject;
+    private long lastPreferredSubjectRefreshMillis;
+
+    private CachedSubjectVersions(List<SubjectVersion> subjectVersions, long loadedAtMillis) {
+      this.subjectVersions = subjectVersions;
+      this.loadedAtMillis = loadedAtMillis;
+    }
+
+    private boolean isExpired(long now) {
+      return now - loadedAtMillis >= SUBJECT_VERSION_CACHE_TTL_MILLIS;
+    }
+
+    private boolean containsSubject(String subject) {
+      return subjectVersions.stream().anyMatch(v -> Objects.equals(subject, v.getSubject()));
+    }
+
+    private boolean shouldRefreshForPreferredSubject(String subject, long now) {
+      return !Objects.equals(lastMissedPreferredSubject, subject)
+          || now - lastPreferredSubjectRefreshMillis >= PREFERRED_SUBJECT_REFRESH_INTERVAL_MILLIS;
+    }
+
+    private void recordPreferredSubjectMiss(String subject, long now) {
+      lastMissedPreferredSubject = subject;
+      lastPreferredSubjectRefreshMillis = now;
+    }
   }
 
   private YangSchema schemaForDeserialize(

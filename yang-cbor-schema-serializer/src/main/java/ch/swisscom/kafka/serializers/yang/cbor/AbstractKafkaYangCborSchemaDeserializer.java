@@ -29,6 +29,7 @@ import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +95,12 @@ public abstract class AbstractKafkaYangCborSchemaDeserializer<T> extends Abstrac
     try {
       byte[] serializedSchemaId =
           headers.lastHeader(AbstractKafkaYangCborSchemaSerializer.SCHEMA_ID_KEY).value();
-      id = ByteBuffer.wrap(serializedSchemaId).getInt();
+
+      if (serializedSchemaId.length == 4) {
+        id = ByteBuffer.wrap(serializedSchemaId).getInt();
+      } else {
+        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
+      }
 
       String subject =
           isKey == null || strategyUsesSchema(isKey)
