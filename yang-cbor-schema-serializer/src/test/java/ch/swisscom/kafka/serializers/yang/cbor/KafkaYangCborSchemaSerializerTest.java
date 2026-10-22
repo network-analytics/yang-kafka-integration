@@ -154,8 +154,7 @@ public class KafkaYangCborSchemaSerializerTest {
     return deserializerHeaders;
   }
 
-  @Disabled(
-      "Primitive anydata payloads are rejected by recent Yangkit strict anydata validation")
+  @Disabled("Primitive anydata payloads are rejected by recent Yangkit strict anydata validation")
   @Test
   public void singleLeafTest() {
     byte[] bytes;
