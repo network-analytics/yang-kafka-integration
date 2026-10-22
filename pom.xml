@@ -72,13 +72,14 @@
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <yangkit.version>1.5.0</yangkit.version>
+        <yangkit.version>1.6.0</yangkit.version>
         <yangkit.common.version>1.1.5</yangkit.common.version>
         <yangkit.common.utils.version>1.0.3</yangkit.common.utils.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
         <spotless.version>2.43.0</spotless.version>
         <confluent.version>8.0.0</confluent.version>
         <junit.version>4.13.2</junit.version>
+        <junit.jupiter.version>5.11.4</junit.jupiter.version>
         <kafka.scala.version>2.13</kafka.scala.version>
         <kafka.version>8.0.0-ccs</kafka.version>
         <kafka.streams.version>4.0.1</kafka.streams.version>
@@ -93,6 +94,18 @@
         <module>yang-cbor-schema-serializer</module>
         <module>yang-cbor-schema-serde</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.jupiter.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <repositories>
         <repository>
@@ -170,8 +183,18 @@
                 <dependencies>
                     <dependency>
                         <groupId>org.apache.maven.surefire</groupId>
-                        <artifactId>surefire-junit4</artifactId>
+                        <artifactId>surefire-junit-platform</artifactId>
                         <version>3.5.2</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.junit.jupiter</groupId>
+                        <artifactId>junit-jupiter-engine</artifactId>
+                        <version>${junit.jupiter.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.junit.vintage</groupId>
+                        <artifactId>junit-vintage-engine</artifactId>
+                        <version>${junit.jupiter.version}</version>
                     </dependency>
                 </dependencies>
                 <configuration>

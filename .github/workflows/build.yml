@@ -8,36 +8,41 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Checkout Yangkit Repo
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v7
+    - name: Checkout Yangkit Common Repo
+      uses: actions/checkout@v7
       with:
-        repository: network-analytics/yangkit
-        ref: feature/yangkit-complete-validation2
+        repository: yang-central/yangkit-common
+        ref: main
+        path: yangkit-common
+    - name: Checkout Yangkit Repo
+      uses: actions/checkout@v7
+      with:
+        repository: yang-central/yangkit
+        ref: main
         path: yangkit
     - name: Checkout yang-compiler Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: network-analytics/yang-compiler
         ref: update-deps
         path: yang-compiler
     - name: Checkout yang-comparator Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: network-analytics/yang-comparator
         ref: update-deps
         path: yang-comparator
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: maven
-
+    - name: Build and Install Yangkit Common (Skipping tests)
+      run: mvn -B install --file yangkit-common/pom.xml -DskipTests
     - name: Build and Install Yangkit (Skipping tests)
       run: mvn -B install --file yangkit/pom.xml -DskipTests
-    - name: Build and Install yang-compiler (Skipping tests)
-      run: mvn -B install --file yang-compiler/pom.xml -DskipTests
     - name: Build and Install yang-compiler (Skipping tests)
       run: mvn -B install --file yang-compiler/pom.xml -DskipTests
     - name: Build and Install yang-comparator (Skipping tests)
