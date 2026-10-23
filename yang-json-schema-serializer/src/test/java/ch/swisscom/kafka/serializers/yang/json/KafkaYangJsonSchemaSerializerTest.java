@@ -43,6 +43,7 @@ public class KafkaYangJsonSchemaSerializerTest {
     config.put(KafkaYangJsonSchemaSerializerConfig.AUTO_REGISTER_SCHEMAS, true);
     config.put(KafkaYangJsonSchemaSerializerConfig.SCHEMA_REGISTRY_URL_CONFIG, "bogus");
     config.put(KafkaYangJsonSchemaSerializerConfig.YANG_JSON_FAIL_INVALID_SCHEMA, true);
+    config.put(KafkaYangJsonSchemaDeserializerConfig.YANG_LIBRARY_CACHE_PATH, "");
 
     schemaRegistry =
         new MockSchemaRegistryClient(Collections.singletonList(new YangSchemaProvider()));
