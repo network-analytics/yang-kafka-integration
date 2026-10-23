@@ -207,114 +207,114 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       String subject,
       byte[] payload)
       throws Exception {
-      YangSchemaContext ctx = yangLibraryCacheBuilder.getOrBuild(schemaId, subject);
-      if (ctx == null) {
-        throw new SerializationException(
-            "YANG schema context is not available yet for schema-id " + schemaId);
-      }
-      JsonNode jsonNode = objectMapper.readTree(payload);
+    YangSchemaContext ctx = yangLibraryCacheBuilder.getOrBuild(schemaId, subject);
+    if (ctx == null) {
+      throw new SerializationException(
+          "YANG schema context is not available yet for schema-id " + schemaId);
+    }
+    JsonNode jsonNode = objectMapper.readTree(payload);
 
-      ValidatorResultBuilder resultBuilder = new ValidatorResultBuilder();
-      YangDataDocumentJsonParser parser = new YangDataDocumentJsonParser(ctx);
-      YangDataDocument doc = parser.parse(jsonNode, resultBuilder);
+    ValidatorResultBuilder resultBuilder = new ValidatorResultBuilder();
+    YangDataDocumentJsonParser parser = new YangDataDocumentJsonParser(ctx);
+    YangDataDocument doc = parser.parse(jsonNode, resultBuilder);
 
-      if (validate && doc != null) {
-        // update() resolves leafrefs + defaults before validation.
-        doc.update();
+    if (validate && doc != null) {
+      // update() resolves leafrefs + defaults before validation.
+      doc.update();
 
-        // UNKNOWN_ELEMENT errors are logged as warnings but do not skip the record —
-        // they occur when vendor or augmenting modules are absent from the schema registry
-        // (partial schemas are normal in telemetry deployments).
-        // All other error tags represent genuine data problems and skip the record.
-        ValidatorResult parseResult = resultBuilder.build();
-        boolean hasUnknownElements = false;
-        List<String> unknownElementMessages = new ArrayList<>();
-        if (parseResult.getRecords() != null) {
-          for (var r : parseResult.getRecords()) {
-            if (r.getErrorTag() == ErrorTag.UNKNOWN_ELEMENT) {
-              hasUnknownElements = true;
-              String msg =
-                  "[UNKNOWN_ELEMENT] schema-id="
-                      + schemaId
-                      + " | path="
-                      + r.getErrorPath()
-                      + " | message="
-                      + (r.getErrorMsg() != null ? r.getErrorMsg().getMessage() : "")
-                      + " | badElement="
-                      + r.getBadElement();
-              unknownElementMessages.add(msg);
-              log.warn(
-                  "[UNKNOWN_ELEMENT] schema-id={} | path={} | message={} | badElement={}",
-                  schemaId,
-                  r.getErrorPath(),
-                  r.getErrorMsg() != null ? r.getErrorMsg().getMessage() : "",
-                  r.getBadElement());
-            }
+      // UNKNOWN_ELEMENT errors are logged as warnings but do not skip the record —
+      // they occur when vendor or augmenting modules are absent from the schema registry
+      // (partial schemas are normal in telemetry deployments).
+      // All other error tags represent genuine data problems and skip the record.
+      ValidatorResult parseResult = resultBuilder.build();
+      boolean hasUnknownElements = false;
+      List<String> unknownElementMessages = new ArrayList<>();
+      if (parseResult.getRecords() != null) {
+        for (var r : parseResult.getRecords()) {
+          if (r.getErrorTag() == ErrorTag.UNKNOWN_ELEMENT) {
+            hasUnknownElements = true;
+            String msg =
+                "[UNKNOWN_ELEMENT] schema-id="
+                    + schemaId
+                    + " | path="
+                    + r.getErrorPath()
+                    + " | message="
+                    + (r.getErrorMsg() != null ? r.getErrorMsg().getMessage() : "")
+                    + " | badElement="
+                    + r.getBadElement();
+            unknownElementMessages.add(msg);
+            log.warn(
+                "[UNKNOWN_ELEMENT] schema-id={} | path={} | message={} | badElement={}",
+                schemaId,
+                r.getErrorPath(),
+                r.getErrorMsg() != null ? r.getErrorMsg().getMessage() : "",
+                r.getBadElement());
           }
         }
-        if (hasUnknownElements) {
-          log.warn(
-              "[UNKNOWN_ELEMENT] schema-id={} — partial schema, {} unresolved elements. Record accepted.",
-              schemaId,
-              unknownElementMessages.size());
-        }
-        List<String> parseErrors =
-            parseResult.getRecords() == null
-                ? java.util.Collections.emptyList()
-                : parseResult.getRecords().stream()
-                    .filter(r -> r.getErrorTag() != ErrorTag.UNKNOWN_ELEMENT)
-                    .map(Object::toString)
-                    .collect(java.util.stream.Collectors.toList());
-        if (!parseErrors.isEmpty()) {
-          String errors = String.join("\n  ", parseErrors);
-          throw new SerializationException(
-            "YANG JSON parse errors for schema-id " + schemaId + ":\n  " + errors);
-        }
-
-        ValidatorResult validationResult = doc.validate();
-        List<String> validationErrors =
-            validationResult.getRecords() == null
-                ? java.util.Collections.emptyList()
-                : validationResult.getRecords().stream()
-                    // Suppress DATA_MISSING only at the root path ("/") — those come from
-                    // mandatory top-level nodes (nacm, yang-library, etc.) across the full
-                    // device schema that are never present in a single telemetry message.
-                    // DATA_MISSING deeper in the tree is a genuine data error.
-                    .filter(
-                        r ->
-                            !(r.getErrorTag() == ErrorTag.DATA_MISSING
-                                && r.getErrorPath()
-                                    instanceof org.yangcentral.yangkit.common.api.AbsolutePath
-                                && ((org.yangcentral.yangkit.common.api.AbsolutePath)
-                                        r.getErrorPath())
-                                    .isRootPath()))
-                    .map(Object::toString)
-                    .collect(java.util.stream.Collectors.toList());
-        if (!validationErrors.isEmpty()) {
-          String errors = String.join("\n  ", validationErrors);
-          throw new SerializationException(
-            "YANG JSON validation errors for schema-id " + schemaId + ":\n  " + errors);
-        }
       }
-
-      if (doc == null) {
+      if (hasUnknownElements) {
+        log.warn(
+            "[UNKNOWN_ELEMENT] schema-id={} — partial schema, {} unresolved elements. Record accepted.",
+            schemaId,
+            unknownElementMessages.size());
+      }
+      List<String> parseErrors =
+          parseResult.getRecords() == null
+              ? java.util.Collections.emptyList()
+              : parseResult.getRecords().stream()
+                  .filter(r -> r.getErrorTag() != ErrorTag.UNKNOWN_ELEMENT)
+                  .map(Object::toString)
+                  .collect(java.util.stream.Collectors.toList());
+      if (!parseErrors.isEmpty()) {
+        String errors = String.join("\n  ", parseErrors);
         throw new SerializationException(
-            "YANG JSON parser returned no document for schema-id " + schemaId);
+            "YANG JSON parse errors for schema-id " + schemaId + ":\n  " + errors);
       }
-      if (includeSchemaAndVersion) {
-        SubjectVersion subjectVersion = subjectVersionForId(schemaId, subject);
-        Integer version = null;
-        if (subjectVersion != null) {
-          subject = subjectVersion.getSubject();
-          version = subjectVersion.getVersion();
-        }
-        YangSchema schema = (YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, schemaId);
-        if (version == null) {
-          version = schemaVersion(topic, isKey, schemaId, subject, schema, null);
-        }
-        return new YangSchemaAndValue(schemaId, subject, version, schema.references(), doc);
+
+      ValidatorResult validationResult = doc.validate();
+      List<String> validationErrors =
+          validationResult.getRecords() == null
+              ? java.util.Collections.emptyList()
+              : validationResult.getRecords().stream()
+                  // Suppress DATA_MISSING only at the root path ("/") — those come from
+                  // mandatory top-level nodes (nacm, yang-library, etc.) across the full
+                  // device schema that are never present in a single telemetry message.
+                  // DATA_MISSING deeper in the tree is a genuine data error.
+                  .filter(
+                      r ->
+                          !(r.getErrorTag() == ErrorTag.DATA_MISSING
+                              && r.getErrorPath()
+                                  instanceof org.yangcentral.yangkit.common.api.AbsolutePath
+                              && ((org.yangcentral.yangkit.common.api.AbsolutePath)
+                                      r.getErrorPath())
+                                  .isRootPath()))
+                  .map(Object::toString)
+                  .collect(java.util.stream.Collectors.toList());
+      if (!validationErrors.isEmpty()) {
+        String errors = String.join("\n  ", validationErrors);
+        throw new SerializationException(
+            "YANG JSON validation errors for schema-id " + schemaId + ":\n  " + errors);
       }
-      return doc;
+    }
+
+    if (doc == null) {
+      throw new SerializationException(
+          "YANG JSON parser returned no document for schema-id " + schemaId);
+    }
+    if (includeSchemaAndVersion) {
+      SubjectVersion subjectVersion = subjectVersionForId(schemaId, subject);
+      Integer version = null;
+      if (subjectVersion != null) {
+        subject = subjectVersion.getSubject();
+        version = subjectVersion.getVersion();
+      }
+      YangSchema schema = (YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, schemaId);
+      if (version == null) {
+        version = schemaVersion(topic, isKey, schemaId, subject, schema, null);
+      }
+      return new YangSchemaAndValue(schemaId, subject, version, schema.references(), doc);
+    }
+    return doc;
   }
 
   /**
@@ -329,86 +329,85 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       Headers headers,
       byte[] payload)
       throws IOException, RestClientException {
-      String subject =
-          isKey == null || strategyUsesSchema(isKey)
-              ? getContextName(topic)
-              : subjectName(topic, isKey, null);
-      Integer resolvedVersion = null;
-      if (includeSchemaAndVersion) {
-        SubjectVersion subjectVersion = subjectVersionForId(id, subject);
-        if (subjectVersion != null) {
-          subject = subjectVersion.getSubject();
-          resolvedVersion = subjectVersion.getVersion();
-        }
+    String subject =
+        isKey == null || strategyUsesSchema(isKey)
+            ? getContextName(topic)
+            : subjectName(topic, isKey, null);
+    Integer resolvedVersion = null;
+    if (includeSchemaAndVersion) {
+      SubjectVersion subjectVersion = subjectVersionForId(id, subject);
+      if (subjectVersion != null) {
+        subject = subjectVersion.getSubject();
+        resolvedVersion = subjectVersion.getVersion();
       }
-      YangSchema schema = ((YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id));
+    }
+    YangSchema schema = ((YangSchema) schemaRegistry.getSchemaBySubjectAndId(subject, id));
 
-      ExtendedSchema readerSchema = null;
-      if (metadata != null) {
-        readerSchema = getLatestWithMetadata(subject);
-      } else if (useLatestVersion) {
-        readerSchema = lookupLatestVersion(subject, schema, false);
+    ExtendedSchema readerSchema = null;
+    if (metadata != null) {
+      readerSchema = getLatestWithMetadata(subject);
+    } else if (useLatestVersion) {
+      readerSchema = lookupLatestVersion(subject, schema, false);
+    }
+    if (readerSchema != null) {
+      subject = subjectName(topic, isKey, schema);
+      schema = schemaForDeserialize(id, schema, subject, isKey);
+      if (resolvedVersion == null) {
+        resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
       }
-      if (readerSchema != null) {
-        subject = subjectName(topic, isKey, schema);
-        schema = schemaForDeserialize(id, schema, subject, isKey);
-        if (resolvedVersion == null) {
-          resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
-        }
-        schema = schema.copy(resolvedVersion);
-      }
-      List<Migration> migrations = Collections.emptyList();
-      if (readerSchema != null) {
-        migrations = getMigrations(subject, schema, readerSchema.getSchema());
-      }
+      schema = schema.copy(resolvedVersion);
+    }
+    List<Migration> migrations = Collections.emptyList();
+    if (readerSchema != null) {
+      migrations = getMigrations(subject, schema, readerSchema.getSchema());
+    }
 
-      ByteBuffer buffer = ByteBuffer.wrap(payload);
-      int length = buffer.limit();
-      int start = buffer.position();
+    ByteBuffer buffer = ByteBuffer.wrap(payload);
+    int length = buffer.limit();
+    int start = buffer.position();
 
-      JsonNode jsonNode = null;
-      YangDataDocument yangDataDocument = null;
-      if (!migrations.isEmpty()) {
-        jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
-        jsonNode = (JsonNode) executeMigrations(migrations, subject, topic, headers, jsonNode);
-      }
-      if (readerSchema != null) {
-        schema = (YangSchema) readerSchema.getSchema();
-      }
-      if (schema.ruleSet() != null && schema.ruleSet().hasRules(RuleMode.READ)) {
-        if (jsonNode == null) {
-          jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
-        }
-        jsonNode =
-            (JsonNode)
-                executeRules(
-                    subject, topic, headers, payload, RuleMode.READ, null, schema, jsonNode);
-      }
-      if (validate) {
-        try {
-          if (jsonNode == null) {
-            jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
-          }
-          yangDataDocument = schema.validate(jsonNode);
-        } catch (YangCodecException e) {
-          throw new SerializationException(
-              "YANG JSON " + jsonNode + " does not match YANG schema " + schema.canonicalString(), e);
-        }
-      }
+    JsonNode jsonNode = null;
+    YangDataDocument yangDataDocument = null;
+    if (!migrations.isEmpty()) {
+      jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
+      jsonNode = (JsonNode) executeMigrations(migrations, subject, topic, headers, jsonNode);
+    }
+    if (readerSchema != null) {
+      schema = (YangSchema) readerSchema.getSchema();
+    }
+    if (schema.ruleSet() != null && schema.ruleSet().hasRules(RuleMode.READ)) {
       if (jsonNode == null) {
         jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
       }
-      if (yangDataDocument == null) {
-        yangDataDocument = schema.createYangDataDocument(jsonNode);
-      }
-      if (includeSchemaAndVersion) {
-        if (resolvedVersion == null) {
-          resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
+      jsonNode =
+          (JsonNode)
+              executeRules(subject, topic, headers, payload, RuleMode.READ, null, schema, jsonNode);
+    }
+    if (validate) {
+      try {
+        if (jsonNode == null) {
+          jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
         }
-        return new YangSchemaAndValue(
-            id, subject, resolvedVersion, schema.references(), yangDataDocument);
+        yangDataDocument = schema.validate(jsonNode);
+      } catch (YangCodecException e) {
+        throw new SerializationException(
+            "YANG JSON " + jsonNode + " does not match YANG schema " + schema.canonicalString(), e);
       }
-      return yangDataDocument;
+    }
+    if (jsonNode == null) {
+      jsonNode = objectMapper.readValue(buffer.array(), start, length, JsonNode.class);
+    }
+    if (yangDataDocument == null) {
+      yangDataDocument = schema.createYangDataDocument(jsonNode);
+    }
+    if (includeSchemaAndVersion) {
+      if (resolvedVersion == null) {
+        resolvedVersion = schemaVersion(topic, isKey, id, subject, schema, null);
+      }
+      return new YangSchemaAndValue(
+          id, subject, resolvedVersion, schema.references(), yangDataDocument);
+    }
+    return yangDataDocument;
   }
 
   private String subjectName(String topic, boolean isKey, YangSchema schemaFromRegistry) {
