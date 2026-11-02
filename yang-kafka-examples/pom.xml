@@ -5,10 +5,10 @@
     <parent>
         <groupId>ch.swisscom</groupId>
         <artifactId>yang-kafka-integration</artifactId>
-        <version>0.0.5</version>
+        <version>0.0.6</version>
     </parent>
     <artifactId>yang-kafka-examples</artifactId>
-    <version>0.0.5</version>
+    <version>0.0.6</version>
     <packaging>jar</packaging>
 
     <name>yang-kafka-examples</name>
