@@ -262,23 +262,21 @@ public class YangSchema implements ParsedSchema {
     ValidatorResult parseResult = validatorResultBuilder.build();
 
     if (!parseResult.isOk()) {
-      log.warn(
-          "YANG JSON does not match YANG schema Parse. Validation errors:\n{}",
-          parseResult.getRecords().stream()
-              .map(Object::toString)
-              .collect(Collectors.joining("\n")));
-      throw new YangCodecException("YANG encoded message is not valid");
+      throw new YangCodecException(
+          "YANG encoded message is not valid (parse errors):\n"
+              + parseResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
     }
 
     ValidatorResult validationResult = yangDataDocument.validate();
 
     if (!validationResult.isOk()) {
-      log.warn(
-          "YANG JSON does not match YANG schema. Validation errors:\n{}",
-          validationResult.getRecords().stream()
-              .map(Object::toString)
-              .collect(Collectors.joining("\n")));
-      throw new YangCodecException("YANG encoded message is not valid");
+      throw new YangCodecException(
+          "YANG encoded message is not valid (validation errors):\n"
+              + validationResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
     }
     return yangDataDocument;
   }

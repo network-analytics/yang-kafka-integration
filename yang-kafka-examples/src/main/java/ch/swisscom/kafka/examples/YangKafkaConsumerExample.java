@@ -1,5 +1,6 @@
 package ch.swisscom.kafka.examples;
 
+import ch.swisscom.kafka.yanglibrary.YangLibraryCacheBuilder;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
@@ -49,7 +50,7 @@ import org.yangcentral.yangkit.data.api.model.YangDataDocument;
  * </pre>
  *
  * <p>The yangkit-specific logic (parsing {@code yang-lib.xml} into a {@link
- * org.yangcentral.yangkit.model.api.schema.YangSchemaContext}) is handled internally by {@code
+ * org.yangcentral.yangkit.model.api.schema.YangSchemaContext}) is handled internally by {@link
  * YangLibraryCacheBuilder} and is demonstrated standalone in the yangkit repo.
  */
 public class YangKafkaConsumerExample {
@@ -59,7 +60,7 @@ public class YangKafkaConsumerExample {
   private static final String GROUP_ID = "yangkit-consumer-group";
   private static final String SCHEMA_REGISTRY_URL = "http://localhost:8081";
 
-  // Default cache path — set by KafkaYangJsonSchemaDeserializerConfig
+  // Example path used only when Approach B is explicitly selected.
   private static final String YANG_LIBRARY_CACHE = "/tmp/yang-cache";
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -131,10 +132,8 @@ public class YangKafkaConsumerExample {
         for (ConsumerRecord<String, YangDataDocument> record : records) {
           YangDataDocument doc = record.value();
           if (doc == null) {
-            // null = intentionally skipped record (schema not yet built, or failed validation).
-            // Genuine deserialization failures are NOT swallowed — the deserializer propagates
-            // them, so set a DeserializationExceptionHandler / DLQ on the consumer to handle them.
-            System.err.printf("[offset=%d] Record skipped (null document)%n", record.offset());
+            // Null payloads are Kafka tombstones; deserialization failures propagate.
+            System.err.printf("[offset=%d] Tombstone record%n", record.offset());
             continue;
           }
           handleDocument(doc, record);

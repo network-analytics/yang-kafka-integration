@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-package ch.swisscom.kafka.schemaregistry.yang;
+package ch.swisscom.kafka.yanglibrary;
 
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.rest.RestService;
@@ -22,9 +22,11 @@ import java.io.File;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -34,10 +36,10 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.LongSupplier;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.OutputKeys;
@@ -51,6 +53,10 @@ import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
+import org.yangcentral.yangkit.model.api.stmt.Module;
+import org.yangcentral.yangkit.model.api.stmt.YangStatement;
+import org.yangcentral.yangkit.parser.YangParser;
+import org.yangcentral.yangkit.parser.YangParserEnv;
 import org.yangcentral.yangkit.parser.YangYinParser;
 import org.yangcentral.yangkit.register.YangStatementImplRegister;
 
@@ -91,17 +97,6 @@ import org.yangcentral.yangkit.register.YangStatementImplRegister;
 public class YangLibraryCacheBuilder {
 
   private static final Logger log = LoggerFactory.getLogger(YangLibraryCacheBuilder.class);
-
-  // Regex patterns — only what is still needed.
-  // The trailing ';' anchors each match to a real statement: a keyword appearing inside a
-  // description/comment string (which is never followed by ';') is skipped, so a stale keyword in
-  // prose before the real statement cannot be mis-extracted.
-  private static final Pattern NAMESPACE_PATTERN = Pattern.compile("\\bnamespace\\s+\"([^\"]+)\";");
-  private static final Pattern REVISION_PATTERN =
-      Pattern.compile("\\brevision\\s+\"(\\d{4}-\\d{2}-\\d{2})\";");
-  // Matches 'module foo {' or 'submodule foo {' to extract module name from raw YANG text
-  private static final Pattern MODULE_NAME_PATTERN =
-      Pattern.compile("\\b(?:module|submodule)\\s+([\\S]+)\\s*\\{");
 
   // Bounding for the in-memory caches. The set of live schema-ids is expected to be small
   // (a handful per consumer), so these caps are generous safety limits that cap memory in the
@@ -172,10 +167,10 @@ public class YangLibraryCacheBuilder {
    * Entries older than {@link #FAILED_SCHEMA_RETRY_MILLIS} are treated as cleared so the build can
    * be retried — a transient SR outage no longer keeps the id dead until a restart.
    */
-  private static boolean isFailed(int schemaId) {
+  private boolean isFailed(int schemaId) {
     Long ts = failedSchemaTimestamps.get(schemaId);
     if (ts == null) return false;
-    if (System.currentTimeMillis() - ts >= FAILED_SCHEMA_RETRY_MILLIS) {
+    if (clock.getAsLong() - ts >= failedSchemaRetryMillis) {
       failedSchemaTimestamps.remove(schemaId);
       return false;
     }
@@ -183,16 +178,40 @@ public class YangLibraryCacheBuilder {
   }
 
   /** Records a build failure for {@code schemaId}, stamping it with the current time. */
-  private static void markFailed(int schemaId) {
-    failedSchemaTimestamps.put(schemaId, System.currentTimeMillis());
+  private void markFailed(int schemaId) {
+    failedSchemaTimestamps.put(schemaId, clock.getAsLong());
   }
 
   private final SchemaRegistryClient schemaRegistry;
   private final File cacheRoot;
+  private final RestService restServiceOverride;
+  private final Executor buildExecutor;
+  private final LongSupplier clock;
+  private final long failedSchemaRetryMillis;
 
   public YangLibraryCacheBuilder(SchemaRegistryClient schemaRegistry, File cacheRoot) {
+    this(
+        schemaRegistry,
+        cacheRoot,
+        null,
+        BUILD_EXECUTOR,
+        System::currentTimeMillis,
+        FAILED_SCHEMA_RETRY_MILLIS);
+  }
+
+  YangLibraryCacheBuilder(
+      SchemaRegistryClient schemaRegistry,
+      File cacheRoot,
+      RestService restServiceOverride,
+      Executor buildExecutor,
+      LongSupplier clock,
+      long failedSchemaRetryMillis) {
     this.schemaRegistry = schemaRegistry;
     this.cacheRoot = cacheRoot;
+    this.restServiceOverride = restServiceOverride;
+    this.buildExecutor = buildExecutor;
+    this.clock = clock;
+    this.failedSchemaRetryMillis = failedSchemaRetryMillis;
     YangStatementImplRegister.registerImpl();
   }
 
@@ -219,7 +238,7 @@ public class YangLibraryCacheBuilder {
       log.warn(
           "[Cache] Skipping schema-id={} (previously failed to build, retry after {}ms)",
           schemaId,
-          FAILED_SCHEMA_RETRY_MILLIS);
+          failedSchemaRetryMillis);
       return null;
     }
     // Defensive cap: if somehow too many builds are in flight, do not add another (avoids an
@@ -237,16 +256,16 @@ public class YangLibraryCacheBuilder {
         schemaId,
         id -> {
           log.info(
-              "[Cache] Starting async schema build for schema-id={} — records processed without"
-                  + " YANG context until schema is ready",
+              "[Cache] Starting async schema build for schema-id={} — records received before the"
+                  + " context is ready are rejected",
               id);
           CompletableFuture<YangSchemaContext> future = new CompletableFuture<>();
-          BUILD_EXECUTOR.submit(
+          buildExecutor.execute(
               () -> {
                 try {
-                  long start = System.currentTimeMillis();
+                  long start = clock.getAsLong();
                   YangSchemaContext ctx = buildAndCache(id, subject);
-                  long elapsed = System.currentTimeMillis() - start;
+                  long elapsed = clock.getAsLong() - start;
                   log.info(
                       "[Cache] Async schema build complete for schema-id={} in {}ms", id, elapsed);
                   future.complete(ctx);
@@ -264,51 +283,63 @@ public class YangLibraryCacheBuilder {
               });
           return future;
         });
-    // Do NOT block the consumer thread — return null so Kafka keeps polling.
-    // The deserializer handles null context as warn-and-continue (no crash, no rebalance).
-    // Once the background build finishes, the next getOrBuild() call hits the cache fast path.
+    // Do not block consumer threads. The deserializer rejects this record while the context builds;
+    // a later call uses the context cache once the background build completes.
     log.warn(
-        "[Cache] Schema not yet ready for schema-id={} — record deserialized without YANG context (building in background)",
+        "[Cache] Schema not ready for schema-id={} — rejecting record while building in background",
         schemaId);
     return null;
   }
 
-  private YangSchemaContext buildAndCache(int schemaId, String subject) throws Exception {
-
-    // Build yang-lib.xml + modules/*.yang from SR, then parse via YangYinParser.
-    // This applies device-specific features (from SR metadata tags) and deviations
-    // (detected by scanning YANG texts for 'deviation' statements), giving us the
-    // correct device-specific schema context for validation.
+  YangSchemaContext buildAndCache(int schemaId, String subject) throws Exception {
     File schemaDir = new File(cacheRoot, "schema-id-" + schemaId);
     File yangLibXml = new File(schemaDir, "yang-lib.xml");
     File modulesDir = new File(schemaDir, "modules");
+    try {
+      Files.createDirectories(modulesDir.toPath());
+      String[] existingModules = modulesDir.list();
+      if (!yangLibXml.exists() || existingModules == null || existingModules.length == 0) {
+        log.info("Fetching YANG modules for schema-id={} from Schema Registry", schemaId);
+        buildFromSchemaRegistry(schemaId, subject, yangLibXml, modulesDir);
+      }
 
-    String[] existingModules = modulesDir.list();
-    if (!yangLibXml.exists() || existingModules == null || existingModules.length == 0) {
-      schemaDir.mkdirs();
-      modulesDir.mkdirs();
-      log.info("Fetching YANG modules for schema-id={} from Schema Registry", schemaId);
-      buildFromSchemaRegistry(schemaId, subject, yangLibXml, modulesDir);
-    }
-
-    YangSchemaContext ctx;
-    synchronized (getParseLock()) {
-      log.info("[Cache] Parsing yang-lib.xml for schema-id={}", schemaId);
-      ctx = YangYinParser.parseFromYangLibrary(yangLibXml, modulesDir);
+      YangSchemaContext ctx;
+      synchronized (getParseLock()) {
+        log.info("[Cache] Parsing yang-lib.xml for schema-id={}", schemaId);
+        ctx = YangYinParser.parseFromYangLibrary(yangLibXml, modulesDir);
+        log.info(
+            "[Cache] Parse done for schema-id={} — {} main modules loaded",
+            schemaId,
+            ctx.getModules().size());
+      }
+      log.info("[Cache] Running init+build for schema-id={}", schemaId);
+      validateWithTimeout(ctx);
+      log.info("[Cache] Init+build done for schema-id={}", schemaId);
+      contextCache.put(schemaId, ctx);
       log.info(
-          "[Cache] Parse done for schema-id={} — {} main modules loaded",
+          "YANG Library schema loaded for schema-id={}: {} modules",
           schemaId,
           ctx.getModules().size());
+      return ctx;
+    } catch (Exception e) {
+      try {
+        deleteRecursively(schemaDir.toPath());
+      } catch (Exception cleanupException) {
+        e.addSuppressed(cleanupException);
+      }
+      throw e;
     }
-    log.info("[Cache] Running init+build for schema-id={}", schemaId);
-    validateWithTimeout(ctx);
-    log.info("[Cache] Init+build done for schema-id={}", schemaId);
-    contextCache.put(schemaId, ctx);
-    log.info(
-        "YANG Library schema loaded for schema-id={}: {} modules",
-        schemaId,
-        ctx.getModules().size());
-    return ctx;
+  }
+
+  private static void deleteRecursively(Path path) throws Exception {
+    if (!Files.exists(path)) {
+      return;
+    }
+    try (var paths = Files.walk(path)) {
+      for (Path item : paths.sorted(Comparator.reverseOrder()).toList()) {
+        Files.deleteIfExists(item);
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -323,7 +354,7 @@ public class YangLibraryCacheBuilder {
     //    All transitively fetched modules (imports, augmentations, deviations)
     //    are loaded together — yangkit applies everything automatically.
     Map<String, ModuleData> allModules = fetchAllModules(schemaId, subject);
-    String rootModuleName = allModules.values().iterator().next().name; // first entry = root
+    String rootModuleName = allModules.values().iterator().next().name(); // first entry = root
 
     // 2. Write each module's YANG text to modules/*.yang
     Map<String, File> moduleFiles = writeYangFiles(allModules, modulesDir);
@@ -338,13 +369,12 @@ public class YangLibraryCacheBuilder {
 
     for (Map.Entry<String, ModuleData> entry : allModules.entrySet()) {
       ModuleData data = entry.getValue();
-      String name = data.name;
+      String name = data.name();
 
-      String revision = data.revision;
-      String namespace = extractNamespace(data.yangText);
-      if (namespace == null) namespace = "";
+      String revision = data.revision();
+      String namespace = data.namespace();
 
-      String path = moduleFiles.get(name).getAbsolutePath().replace("\\", "/");
+      String path = moduleFiles.get(entry.getKey()).getAbsolutePath().replace("\\", "/");
       String location = "file://" + path;
 
       // Update content-id hash
@@ -460,8 +490,9 @@ public class YangLibraryCacheBuilder {
     io.confluent.kafka.schemaregistry.client.rest.entities.SchemaString rootRaw =
         restService.getId(schemaId);
     String rootYangText = rootRaw.getSchemaString();
-    String rootName = extractModuleName(rootYangText);
-    String rootRevision = extractRevision(rootYangText);
+    YangModuleHeader rootHeader = parseYangHeader(rootYangText);
+    String rootName = rootHeader.name();
+    String rootRevision = rootHeader.revision();
     log.debug("Fetched root module '{}' for schema-id={}", rootName, schemaId);
     List<SchemaReference> rootRefs =
         rootRaw.getReferences() != null ? rootRaw.getReferences() : Collections.emptyList();
@@ -471,9 +502,7 @@ public class YangLibraryCacheBuilder {
     if (!rootFeatures.isEmpty()) {
       log.debug("[Cache] Root module '{}' features: {}", rootName, rootFeatures);
     }
-    result.put(
-        nameKey(rootName, rootRevision),
-        new ModuleData(rootName, rootRevision, rootYangText, rootTags));
+    result.put(nameKey(rootName, rootRevision), new ModuleData(rootHeader, rootYangText, rootTags));
 
     // BFS over all transitive references
     java.util.Queue<SchemaReference> queue = new java.util.LinkedList<>(rootRefs);
@@ -482,37 +511,23 @@ public class YangLibraryCacheBuilder {
       SchemaReference ref = queue.poll();
       String visitKey = ref.getSubject() + ":" + ref.getVersion();
       if (!visited.add(visitKey)) continue;
-      try {
-        io.confluent.kafka.schemaregistry.client.rest.entities.Schema refSchema =
-            restService.getVersion(ref.getSubject(), ref.getVersion());
-        String yangText = refSchema.getSchema();
-        String modName = extractModuleName(yangText);
-        String modRevision = extractRevision(yangText);
-        // Key by (name, revision) so the same module name at different revisions is kept rather
-        // than silently skipped (previously keyed by name only, so a later revision was dropped).
-        String moduleKey = nameKey(modName, modRevision);
-        if (!result.containsKey(moduleKey)) {
-          List<SchemaReference> refs =
-              refSchema.getReferences() != null
-                  ? refSchema.getReferences()
-                  : Collections.emptyList();
-          // Extract tags directly from the fetched schema version — not from
-          // getLatestSchemaMetadata
-          // since features are on the specific registered version, not necessarily the latest
-          Map<String, List<String>> tags = extractTags(refSchema.getMetadata());
-          List<String> features = tags.getOrDefault("features", Collections.emptyList());
-          if (!features.isEmpty()) {
-            log.debug("[Cache] Module '{}' features: {}", modName, features);
-          }
-          result.put(moduleKey, new ModuleData(modName, modRevision, yangText, tags));
-          queue.addAll(refs);
+      io.confluent.kafka.schemaregistry.client.rest.entities.Schema refSchema =
+          restService.getVersion(ref.getSubject(), ref.getVersion());
+      String yangText = refSchema.getSchema();
+      YangModuleHeader moduleHeader = parseYangHeader(yangText);
+      String modName = moduleHeader.name();
+      String modRevision = moduleHeader.revision();
+      String moduleKey = nameKey(modName, modRevision);
+      if (!result.containsKey(moduleKey)) {
+        List<SchemaReference> refs =
+            refSchema.getReferences() != null ? refSchema.getReferences() : Collections.emptyList();
+        Map<String, List<String>> tags = extractTags(refSchema.getMetadata());
+        List<String> features = tags.getOrDefault("features", Collections.emptyList());
+        if (!features.isEmpty()) {
+          log.debug("[Cache] Module '{}' features: {}", modName, features);
         }
-      } catch (Exception e) {
-        log.warn(
-            "Could not fetch SR reference {}:{}: {}",
-            ref.getSubject(),
-            ref.getVersion(),
-            e.getMessage());
+        result.put(moduleKey, new ModuleData(moduleHeader, yangText, tags));
+        queue.addAll(refs);
       }
     }
 
@@ -522,6 +537,9 @@ public class YangLibraryCacheBuilder {
 
   /** Gets the underlying RestService via reflection to bypass parseSchema/ANTLR. */
   private RestService getRestService() {
+    if (restServiceOverride != null) {
+      return restServiceOverride;
+    }
     try {
       Class<?> cls = schemaRegistry.getClass();
       while (cls != null) {
@@ -539,11 +557,35 @@ public class YangLibraryCacheBuilder {
     }
   }
 
-  /** Extracts the module/submodule name from raw YANG text. */
-  private String extractModuleName(String yangText) {
-    if (yangText == null) return "unknown";
-    Matcher m = MODULE_NAME_PATTERN.matcher(yangText);
-    return m.find() ? m.group(1) : "unknown";
+  static YangModuleHeader parseYangHeader(String yangText) throws Exception {
+    YangParserEnv env = new YangParserEnv();
+    env.setYangStr(yangText);
+    env.setFilename("schema.yang");
+    env.setCurPos(0);
+    List<org.yangcentral.yangkit.base.YangElement> elements =
+        new YangParser().parseYang(yangText, env);
+    for (org.yangcentral.yangkit.base.YangElement element : elements) {
+      if (element instanceof Module module) {
+        String namespace = statementArguments(module, "namespace").stream().findFirst().orElse("");
+        String revision =
+            statementArguments(module, "revision").stream()
+                .filter(value -> !value.isBlank())
+                .max(String::compareTo)
+                .orElse("");
+        return new YangModuleHeader(module.getModuleId().getModuleName(), revision, namespace);
+      }
+    }
+    throw new IllegalArgumentException("YANG text does not contain a module or submodule");
+  }
+
+  private static List<String> statementArguments(YangStatement parent, String keyword) {
+    return parent.getSubElements().stream()
+        .filter(YangStatement.class::isInstance)
+        .map(YangStatement.class::cast)
+        .filter(statement -> keyword.equals(statement.getYangKeyword().getLocalName()))
+        .map(YangStatement::getArgStr)
+        .filter(value -> value != null)
+        .toList();
   }
 
   // ---------------------------------------------------------------------------
@@ -559,8 +601,8 @@ public class YangLibraryCacheBuilder {
       String fileName = entry.getKey() + ".yang";
       File yangFile = new File(modulesDir, fileName);
       Files.writeString(yangFile.toPath(), data.yangText, StandardCharsets.UTF_8);
-      // Key by bare module name so callers that look up by name still resolve.
-      fileMap.put(data.name, yangFile);
+      // Keep the full name/revision key used by the YANG Library entries.
+      fileMap.put(entry.getKey(), yangFile);
     }
     return fileMap;
   }
@@ -568,16 +610,6 @@ public class YangLibraryCacheBuilder {
   // ---------------------------------------------------------------------------
   // YANG text parsing helpers
   // ---------------------------------------------------------------------------
-
-  private String extractNamespace(String yangText) {
-    Matcher m = NAMESPACE_PATTERN.matcher(yangText);
-    return m.find() ? m.group(1) : null;
-  }
-
-  private String extractRevision(String yangText) {
-    Matcher m = REVISION_PATTERN.matcher(yangText);
-    return m.find() ? m.group(1) : null;
-  }
 
   // ---------------------------------------------------------------------------
   // SR Metadata helpers
@@ -594,17 +626,29 @@ public class YangLibraryCacheBuilder {
   /**
    * Internal data holder. Carries the module name + revision so downstream code need not re-parse.
    */
+  record YangModuleHeader(String name, String revision, String namespace) {}
+
   private static final class ModuleData {
-    final String name;
-    final String revision;
+    final YangModuleHeader header;
     final String yangText;
     final Map<String, List<String>> tags;
 
-    ModuleData(String name, String revision, String yangText, Map<String, List<String>> tags) {
-      this.name = name;
-      this.revision = revision == null ? "" : revision;
+    ModuleData(YangModuleHeader header, String yangText, Map<String, List<String>> tags) {
+      this.header = header;
       this.yangText = yangText;
       this.tags = tags;
+    }
+
+    String name() {
+      return header.name();
+    }
+
+    String revision() {
+      return header.revision();
+    }
+
+    String namespace() {
+      return header.namespace();
     }
   }
 

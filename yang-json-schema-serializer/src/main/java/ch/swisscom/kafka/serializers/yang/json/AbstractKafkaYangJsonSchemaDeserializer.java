@@ -16,9 +16,9 @@
 
 package ch.swisscom.kafka.serializers.yang.json;
 
-import ch.swisscom.kafka.schemaregistry.yang.YangLibraryCacheBuilder;
 import ch.swisscom.kafka.schemaregistry.yang.YangSchema;
 import ch.swisscom.kafka.schemaregistry.yang.YangSchemaProvider;
+import ch.swisscom.kafka.yanglibrary.YangLibraryCacheBuilder;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -98,7 +98,12 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
         config.getString(KafkaYangJsonSchemaDeserializerConfig.YANG_LIBRARY_CACHE_PATH);
     if (cachePath != null && !cachePath.isBlank()) {
       File cacheRoot = new File(cachePath);
-      cacheRoot.mkdirs();
+      if (!cacheRoot.exists()) {
+        cacheRoot.mkdirs();
+      }
+      if (!cacheRoot.isDirectory() || !cacheRoot.canWrite()) {
+        throw new ConfigException("Cannot create YANG Library cache directory: " + cachePath);
+      }
       this.yangLibraryCacheBuilder = new YangLibraryCacheBuilder(schemaRegistry, cacheRoot);
       log.info("YANG Library mode enabled. Cache root: {}", cacheRoot.getAbsolutePath());
     } else {
@@ -271,7 +276,7 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
             "YANG JSON parse errors for schema-id " + schemaId + ":\n  " + errors);
       }
 
-      ValidatorResult validationResult = doc.validate();
+      ValidatorResult validationResult = validateDocument(ctx, doc);
       List<String> validationErrors =
           validationResult.getRecords() == null
               ? java.util.Collections.emptyList()
@@ -315,6 +320,12 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       return new YangSchemaAndValue(schemaId, subject, version, schema.references(), doc);
     }
     return doc;
+  }
+
+  static ValidatorResult validateDocument(YangSchemaContext context, YangDataDocument document) {
+    synchronized (context) {
+      return document.validate();
+    }
   }
 
   /**
