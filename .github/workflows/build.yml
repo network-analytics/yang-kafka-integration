@@ -9,17 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+    # yangkit 1.7.0 and yangkit-common 1.1.6-SNAPSHOT are not on Maven Central yet, so they are
+    # built from source at pinned refs (pom.xml depends on exactly these versions).
     - name: Checkout Yangkit Common Repo
       uses: actions/checkout@v7
       with:
         repository: yang-central/yangkit-common
-        ref: main
+        ref: 0846d1faf6852037fe99c4114e6a95ce2e05e2d3 # 1.1.6-SNAPSHOT
         path: yangkit-common
     - name: Checkout Yangkit Repo
       uses: actions/checkout@v7
       with:
         repository: yang-central/yangkit
-        ref: main
+        ref: v1.7.0
         path: yangkit
     - name: Checkout yang-compiler Repo
       uses: actions/checkout@v7
