@@ -1,0 +1,41 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>ch.swisscom</groupId>
+        <artifactId>yang-kafka-integration</artifactId>
+        <version>0.0.5</version>
+    </parent>
+    <artifactId>yang-kafka-examples</artifactId>
+    <version>0.0.5</version>
+    <packaging>jar</packaging>
+
+    <name>yang-kafka-examples</name>
+    <description>Standalone, runnable examples for consuming/producing YANG messages with yang-kafka-integration</description>
+
+    <licenses>
+        <license>
+            <name>Apache License 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <dependencies>
+        <!-- The examples build on the JSON serializer (which transitively brings in the
+             schema-registry plugin, Confluent SR client, Kafka clients and yangkit). -->
+        <dependency>
+            <groupId>ch.swisscom</groupId>
+            <artifactId>kafka-yang-json-schema-serializer</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

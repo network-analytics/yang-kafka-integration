@@ -95,6 +95,10 @@ public class YangSchema implements ParsedSchema {
     this(schemaString, null, context, module, references, resolvedReferences, null, null);
   }
 
+  public Map<String, String> resolvedReferences() {
+    return this.resolvedReferences;
+  }
+
   @Override
   public String schemaType() {
     return TYPE;
@@ -258,13 +262,21 @@ public class YangSchema implements ParsedSchema {
     ValidatorResult parseResult = validatorResultBuilder.build();
 
     if (!parseResult.isOk()) {
-      throw new YangCodecException("YANG encoded message is not valid");
+      throw new YangCodecException(
+          "YANG encoded message is not valid (parse errors):\n"
+              + parseResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
     }
 
     ValidatorResult validationResult = yangDataDocument.validate();
 
     if (!validationResult.isOk()) {
-      throw new YangCodecException("YANG encoded message is not valid");
+      throw new YangCodecException(
+          "YANG encoded message is not valid (validation errors):\n"
+              + validationResult.getRecords().stream()
+                  .map(Object::toString)
+                  .collect(Collectors.joining("\n")));
     }
     return yangDataDocument;
   }
