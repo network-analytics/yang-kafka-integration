@@ -73,7 +73,7 @@ public class KafkaYangCborSchemaSerializerTest {
 
   private <T> YangDataDocument getRecord(T o) {
     YangDataDocument doc = null;
-    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":" + o + "}}}";
+    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":{\"value\":" + o + "}}}}";
     ObjectMapper mapper = new ObjectMapper();
     try {
       YangSchemaContext schemaContext =
@@ -108,7 +108,7 @@ public class KafkaYangCborSchemaSerializerTest {
 
   private <T> JsonNode getJsonNode(T o) {
     JsonNode jsonNode;
-    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":" + o + "}}}";
+    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":{\"value\":" + o + "}}}}";
     ObjectMapper mapper = new ObjectMapper();
     try {
       jsonNode = mapper.readTree(newString);
