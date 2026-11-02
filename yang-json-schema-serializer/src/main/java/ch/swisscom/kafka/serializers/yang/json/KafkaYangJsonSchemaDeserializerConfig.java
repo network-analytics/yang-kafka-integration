@@ -42,6 +42,21 @@ public class KafkaYangJsonSchemaDeserializerConfig extends AbstractKafkaSchemaSe
   public static final String YANG_JSON_VALUE_TYPE_DOC =
       "Classname of the type that the message " + "value should be deserialized to";
 
+  public static final String YANG_LIBRARY_CACHE_PATH = "yang.library.cache.path";
+  public static final String YANG_LIBRARY_CACHE_PATH_DEFAULT = "";
+  public static final String YANG_LIBRARY_CACHE_PATH_DOC =
+      "Optional path to a local directory used as the YANG Library disk cache. "
+          + "Unset or blank disables YANG Library mode and uses the legacy Schema Registry path. "
+          + "Set this to a writable directory to enable YANG Library mode; the directory is "
+          + "created when it does not exist. "
+          + "YANG schemas are stored as RFC 8525 yang-lib.xml files (mirroring "
+          + "NetGauze's cache layout: <cacheRoot>/schema-id-<N>/yang-lib.xml + modules/). "
+          + "On first access the cache is built automatically by fetching all YANG modules "
+          + "from Confluent Schema Registry and scanning them for deviation and feature "
+          + "metadata. Subsequent calls reuse the on-disk cache without contacting SR. "
+          + "Device-specific deviations and enabled features are applied correctly. "
+          + "An invalid or uncreatable path fails deserializer configuration.";
+
   private static ConfigDef config;
 
   static {
@@ -70,7 +85,13 @@ public class KafkaYangJsonSchemaDeserializerConfig extends AbstractKafkaSchemaSe
                 ConfigDef.Type.CLASS,
                 YANG_JSON_VALUE_TYPE_DEFAULT,
                 ConfigDef.Importance.MEDIUM,
-                YANG_JSON_VALUE_TYPE_DOC);
+                YANG_JSON_VALUE_TYPE_DOC)
+            .define(
+                YANG_LIBRARY_CACHE_PATH,
+                ConfigDef.Type.STRING,
+                YANG_LIBRARY_CACHE_PATH_DEFAULT,
+                ConfigDef.Importance.MEDIUM,
+                YANG_LIBRARY_CACHE_PATH_DOC);
   }
 
   public KafkaYangJsonSchemaDeserializerConfig(Map<?, ?> props) {

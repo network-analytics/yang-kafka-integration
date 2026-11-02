@@ -100,8 +100,8 @@
                             </artifactSet>
                             <relocations>
                                 <relocation>
-                                    <pattern>io.github.yang-central.yangkit</pattern>
-                                    <shadedPattern>shaded.io.github.yang-central.yangkit</shadedPattern>
+                                    <pattern>org.antlr</pattern>
+                                    <shadedPattern>shaded.org.antlr</shadedPattern>
                                 </relocation>
                             </relocations>
                         </configuration>
