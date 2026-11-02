@@ -18,7 +18,6 @@ import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.dom4j.DocumentException;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResultBuilder;
 import org.yangcentral.yangkit.data.api.model.YangDataDocument;
@@ -74,7 +73,7 @@ public class KafkaYangCborSchemaSerializerTest {
 
   private <T> YangDataDocument getRecord(T o) {
     YangDataDocument doc = null;
-    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":" + o + "}}}";
+    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":{\"value\":" + o + "}}}}";
     ObjectMapper mapper = new ObjectMapper();
     try {
       YangSchemaContext schemaContext =
@@ -109,7 +108,7 @@ public class KafkaYangCborSchemaSerializerTest {
 
   private <T> JsonNode getJsonNode(T o) {
     JsonNode jsonNode;
-    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":" + o + "}}}";
+    String newString = "{\"data\":{\"insa-test:insa-container\":{\"d\":{\"value\":" + o + "}}}}";
     ObjectMapper mapper = new ObjectMapper();
     try {
       jsonNode = mapper.readTree(newString);
@@ -154,7 +153,6 @@ public class KafkaYangCborSchemaSerializerTest {
     return deserializerHeaders;
   }
 
-  @Disabled("Primitive anydata payloads are rejected by recent Yangkit strict anydata validation")
   @Test
   public void singleLeafTest() {
     byte[] bytes;
