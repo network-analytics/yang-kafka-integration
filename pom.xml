@@ -77,6 +77,7 @@
         <yangkit.common.version>1.1.5</yangkit.common.version>
         <yangkit.common.utils.version>1.0.3</yangkit.common.utils.version>
         <yang-comparator.version>1.0.0</yang-comparator.version>
+        <yang-comparator-yangtools.version>1.0.0</yang-comparator-yangtools.version>
         <spotless.version>2.43.0</spotless.version>
         <confluent.version>7.4.13</confluent.version>
         <junit.version>4.13.2</junit.version>

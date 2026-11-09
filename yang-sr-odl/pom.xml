@@ -123,6 +123,24 @@
             <version>${odl.yangtools.version}</version>
         </dependency>
 
+        <!-- RFC 7950 section 11 compatibility check. It is built against yangtools 16.1.0, this module runs it on
+             ${odl.yangtools.version}. -->
+        <dependency>
+            <groupId>io.github.yang-central.yangkit</groupId>
+            <artifactId>yang-comparator-yangtools</artifactId>
+            <version>${yang-comparator-yangtools.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.opendaylight.yangtools</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- For testing and mocking -->
         <dependency>
             <groupId>junit</groupId>
@@ -159,13 +177,6 @@
                             </relocations>
                             <filters>
                                 <filter>
-                                    <!--
-                                        Strip signature files from any signed dependency jars that get
-                                        merged into the shaded jar. Once shading rewrites/merges classes,
-                                        the original signatures no longer match, causing the JVM to throw
-                                        java.lang.SecurityException: Invalid signature file digest for
-                                        Manifest main attributes at class-load time.
-                                    -->
                                     <artifact>*:*</artifact>
                                     <excludes>
                                         <exclude>META-INF/*.SF</exclude>
@@ -176,19 +187,6 @@
                                 </filter>
                             </filters>
                             <transformers>
-                                <!--
-                                    Yangtools uses java.util.ServiceLoader (e.g. YangXPathParserFactory)
-                                    resolved via META-INF/services/* files. The relocation above rewrites
-                                    org.opendaylight.yangtools.* bytecode references to
-                                    shaded.org.opendaylight.yangtools.*, but plain resource merging does
-                                    NOT rewrite the class names *listed inside* those service files -
-                                    without this transformer they'd still point at the old, no-longer-
-                                    present package, so ServiceLoader finds nothing and yangtools' static
-                                    initializers fail with "No YangXPathParserFactory found". This
-                                    transformer merges same-named service files across jars AND relocates
-                                    the class name entries inside them consistently with the relocation
-                                    rules above.
-                                -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                         </configuration>

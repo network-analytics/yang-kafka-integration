@@ -1,5 +1,6 @@
 package ch.swisscom.kafka.schemaregistry.yang;
 
+import ch.swisscom.kafka.schemaregistry.yang.compatibility.YangCompatibilityChecker;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.rest.entities.Metadata;
 import io.confluent.kafka.schemaregistry.client.rest.entities.RuleSet;
@@ -23,6 +24,7 @@ public class YangSchema implements ParsedSchema {
     private final Metadata metadata;
     private final Integer version;
     private final RuleSet ruleSet;
+    private final YangCompatibilityChecker compatibilityChecker;
 
     public YangSchema(
         String schemaString,
@@ -33,6 +35,19 @@ public class YangSchema implements ParsedSchema {
         Metadata metadata,
         RuleSet ruleSet
     ) {
+        this(schemaString, name, version, context, references, metadata, ruleSet, YangCompatibilityChecker.strict());
+    }
+
+    public YangSchema(
+        String schemaString,
+        String name,
+        Integer version,
+        EffectiveModelContext context,
+        List<SchemaReference> references,
+        Metadata metadata,
+        RuleSet ruleSet,
+        YangCompatibilityChecker compatibilityChecker
+    ) {
         this.schemaString = schemaString;
         this.name = name;
         this.version = version;
@@ -40,6 +55,7 @@ public class YangSchema implements ParsedSchema {
         this.references = references == null ? Collections.emptyList() : Collections.unmodifiableList(references);
         this.metadata = metadata;
         this.ruleSet = ruleSet;
+        this.compatibilityChecker = Objects.requireNonNull(compatibilityChecker, "compatibilityChecker");
     }
 
     @Override
@@ -85,23 +101,35 @@ public class YangSchema implements ParsedSchema {
 
     @Override
     public ParsedSchema copy() {
-        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet,
+                compatibilityChecker);
     }
 
     @Override
     public ParsedSchema copy(Integer version) {
-        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet,
+                compatibilityChecker);
     }
 
     @Override
     public ParsedSchema copy(Metadata metadata, RuleSet ruleSet) {
-        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet);
+        return new YangSchema(schemaString, name, version, context, references, metadata, ruleSet,
+                compatibilityChecker);
     }
 
+    /**
+     * Checks this (the new) module against the previous one with the rules of RFC 7950 section 11. A submodule has no
+     * effective model of its own, it is part of the module which includes it, so there is nothing to compare.
+     */
     @Override
     public List<String> isBackwardCompatible(ParsedSchema previousSchema) {
-        // TODO: Placeholder for compatible checks. ODL Yangtools has built in, but needs rule-based comparison.
-        return Collections.emptyList();
+        if (!(previousSchema instanceof YangSchema previous)) {
+            return Collections.singletonList("Incompatible schema types");
+        }
+        if (context == null || previous.context == null) {
+            return Collections.emptyList();
+        }
+        return compatibilityChecker.check(previous.context, previous.name(), context, name());
     }
 
     @Override

@@ -2,6 +2,7 @@ package ch.swisscom.kafka.schemaregistry.yang;
 
 import ch.swisscom.kafka.schemaregistry.util.ParseErrorReason;
 import ch.swisscom.kafka.schemaregistry.util.YangSchemaProviderMetrics;
+import ch.swisscom.kafka.schemaregistry.yang.compatibility.YangCompatibilityChecker;
 import ch.swisscom.kafka.schemaregistry.yang.preprocessing.YangSourcePreprocessor;
 import io.confluent.kafka.schemaregistry.AbstractSchemaProvider;
 import io.confluent.kafka.schemaregistry.ParsedSchema;
@@ -36,6 +37,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
             ServiceLoader.load(YangTextToIRSourceTransformer.class).findFirst().orElseThrow();
     private final YangSchemaProviderMetrics metrics;
     private final YangSourcePreprocessor yangSourcePreprocessor;
+    private volatile YangCompatibilityChecker compatibilityChecker;
 
     public YangSchemaProvider() {
         this(YangSourcePreprocessor.standard());
@@ -44,6 +46,17 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
     YangSchemaProvider(final YangSourcePreprocessor yangSourcePreprocessor) {
         this.metrics = new YangSchemaProviderMetrics();
         this.yangSourcePreprocessor = yangSourcePreprocessor;
+        this.compatibilityChecker = new YangCompatibilityChecker(false, metrics);
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
+        super.configure(configs);
+        Object allowUnknown = configs.get(YangCompatibilityChecker.ALLOW_UNKNOWN_CONFIG);
+        this.compatibilityChecker = new YangCompatibilityChecker(
+                allowUnknown != null && Boolean.parseBoolean(allowUnknown.toString().trim()), metrics);
+        log.info("YANG compatibility check: changes which cannot be judged are {}",
+                compatibilityChecker.allowUnknown() ? "accepted" : "rejected");
     }
 
     @Override
@@ -75,7 +88,8 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
                 null,
                 schema.getReferences(),
                 schema.getMetadata(),
-                schema.getRuleSet()
+                schema.getRuleSet(),
+                compatibilityChecker
             );
         }
 
@@ -99,7 +113,7 @@ public class YangSchemaProvider extends AbstractSchemaProvider {
         }
 
         return new YangSchema(schema.getSchema(), built.mainName(), schema.getVersion(), built.context(),
-                schema.getReferences(), schema.getMetadata(), schema.getRuleSet());
+                schema.getReferences(), schema.getMetadata(), schema.getRuleSet(), compatibilityChecker);
     }
 
     private record BuiltModel(EffectiveModelContext context, String mainName) {
