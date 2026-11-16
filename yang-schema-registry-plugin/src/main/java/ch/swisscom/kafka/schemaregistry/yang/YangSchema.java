@@ -35,22 +35,33 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.dom4j.io.OutputFormat;
 import org.dom4j.io.XMLWriter;
+import org.jaxen.JaxenException;
+import org.jaxen.expr.LocationPath;
+import org.jaxen.expr.NameStep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yangcentral.yangkit.common.api.QName;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResult;
 import org.yangcentral.yangkit.common.api.validate.ValidatorResultBuilder;
 import org.yangcentral.yangkit.comparator.CompareType;
 import org.yangcentral.yangkit.comparator.CompatibilityRule;
 import org.yangcentral.yangkit.comparator.YangComparator;
 import org.yangcentral.yangkit.comparator.YangCompareResult;
+import org.yangcentral.yangkit.data.api.model.AnyDataData;
+import org.yangcentral.yangkit.data.api.model.TypedData;
+import org.yangcentral.yangkit.data.api.model.YangData;
+import org.yangcentral.yangkit.data.api.model.YangDataContainer;
 import org.yangcentral.yangkit.data.api.model.YangDataDocument;
 import org.yangcentral.yangkit.data.codec.json.YangDataDocumentJsonParser;
 import org.yangcentral.yangkit.model.api.codec.YangCodecException;
 import org.yangcentral.yangkit.model.api.schema.YangSchemaContext;
 import org.yangcentral.yangkit.model.api.stmt.Module;
+import org.yangcentral.yangkit.xpath.impl.YangXPathImpl;
 
 public class YangSchema implements ParsedSchema {
   private static final Logger log = LoggerFactory.getLogger(YangSchema.class);
+  private static final String YANG_PATCH_NAMESPACE = "urn:ietf:params:xml:ns:yang:ietf-yang-patch";
+  private static final String YANG_PUSH_NAMESPACE = "urn:ietf:params:xml:ns:yang:ietf-yang-push";
 
   public static final String TYPE = "YANG";
 
@@ -258,6 +269,7 @@ public class YangSchema implements ParsedSchema {
     ValidatorResultBuilder validatorResultBuilder = new ValidatorResultBuilder();
     YangDataDocument yangDataDocument =
         new YangDataDocumentJsonParser(schemaContext).parse(jsonNode, validatorResultBuilder);
+    configureFilteredPushValidation(yangDataDocument, jsonNode);
     yangDataDocument.update();
     ValidatorResult parseResult = validatorResultBuilder.build();
 
@@ -279,6 +291,129 @@ public class YangSchema implements ParsedSchema {
                   .collect(Collectors.joining("\n")));
     }
     return yangDataDocument;
+  }
+
+  public static void configureFilteredPushValidation(YangDataDocument document, JsonNode jsonNode) {
+    if (document == null) {
+      return;
+    }
+    String partialDataFilter = getMatchingPushUpdateFilter(jsonNode);
+    markDatastoreContentsPartial(document, partialDataFilter);
+  }
+
+  static String getMatchingPushUpdateFilter(JsonNode jsonNode) {
+    JsonNode message = jsonNode.path("ietf-telemetry-message:message");
+    JsonNode subscription =
+        message
+            .path("telemetry-message-metadata")
+            .path("ietf-yang-push-telemetry-message:yang-push-subscription");
+    JsonNode pushUpdate =
+        message
+            .path("payload")
+            .path("ietf-yp-notification:envelope")
+            .path("contents")
+            .path("ietf-yang-push:push-update");
+    JsonNode subscriptionId = subscription.path("id");
+    JsonNode updateId = pushUpdate.path("id");
+    String filter = subscription.path("xpath-filter").asText("");
+    if (!subscriptionId.isIntegralNumber()
+        || !updateId.isIntegralNumber()
+        || subscriptionId.asLong() != updateId.asLong()
+        || !pushUpdate.path("datastore-contents").isObject()
+        || !isAbsoluteChildLocationPath(filter)) {
+      return null;
+    }
+    return filter;
+  }
+
+  private static boolean isAbsoluteChildLocationPath(String filter) {
+    try {
+      Object expression = new YangXPathImpl(filter).getRootExpr();
+      if (!(expression instanceof LocationPath) || !((LocationPath) expression).isAbsolute()) {
+        return false;
+      }
+      for (Object step : ((LocationPath) expression).getSteps()) {
+        if (!(step instanceof NameStep)
+            || ((NameStep) step).getAxis() != org.jaxen.saxpath.Axis.CHILD) {
+          return false;
+        }
+      }
+      return true;
+    } catch (JaxenException e) {
+      return false;
+    }
+  }
+
+  private static void markDatastoreContentsPartial(YangDataContainer container, String filter) {
+    QName parentName = getContainerQName(container);
+    for (YangData<?> child : container.getDataChildren()) {
+      if (child instanceof AnyDataData) {
+        YangDataDocument value = ((AnyDataData) child).getValue();
+        if (value == null) {
+          continue;
+        }
+        QName childName = child.getQName();
+        if (isYangPatchValue(parentName, childName)) {
+          // RFC 8072: edit value is a subtree at the edit target, not a full datastore
+          String targetFilter = getEditTargetFilter(container);
+          if (targetFilter != null) {
+            value.setPartialDataFilter(targetFilter);
+          }
+        } else if (filter != null
+            && parentName != null
+            && "push-update".equals(parentName.getLocalName())
+            && YANG_PUSH_NAMESPACE.equals(parentName.getNamespace().toString())
+            && "datastore-contents".equals(childName.getLocalName())
+            && YANG_PUSH_NAMESPACE.equals(childName.getNamespace().toString())) {
+          value.setPartialDataFilter(filter);
+        } else {
+          markDatastoreContentsPartial(value, filter);
+        }
+      } else if (child instanceof YangDataContainer) {
+        markDatastoreContentsPartial((YangDataContainer) child, filter);
+      }
+    }
+  }
+
+  private static boolean isYangPatchValue(QName parentName, QName childName) {
+    return parentName != null
+        && "edit".equals(parentName.getLocalName())
+        && isYangPatchNamespace(parentName)
+        && "value".equals(childName.getLocalName())
+        && isYangPatchNamespace(childName);
+  }
+
+  // yang-patch nodes are in the ietf-yang-push namespace when pulled in via uses
+  private static boolean isYangPatchNamespace(QName name) {
+    String namespace = name.getNamespace().toString();
+    return YANG_PATCH_NAMESPACE.equals(namespace) || YANG_PUSH_NAMESPACE.equals(namespace);
+  }
+
+  // builds a child-path filter from the edit target by dropping list key predicates
+  private static String getEditTargetFilter(YangDataContainer edit) {
+    for (YangData<?> sibling : edit.getDataChildren()) {
+      if (sibling instanceof TypedData
+          && "target".equals(sibling.getQName().getLocalName())
+          && isYangPatchNamespace(sibling.getQName())) {
+        String target = ((TypedData<?, ?>) sibling).getStringValue();
+        if (target == null) {
+          return null;
+        }
+        String filter = target.replaceAll("\\[[^\\]]*\\]", "");
+        return isAbsoluteChildLocationPath(filter) ? filter : null;
+      }
+    }
+    return null;
+  }
+
+  private static QName getContainerQName(YangDataContainer container) {
+    if (container instanceof YangDataDocument) {
+      return ((YangDataDocument) container).getQName();
+    }
+    if (container instanceof YangData) {
+      return ((YangData<?>) container).getQName();
+    }
+    return null;
   }
 
   public YangDataDocument createYangDataDocument(JsonNode jsonNode) {

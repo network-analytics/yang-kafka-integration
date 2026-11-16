@@ -208,6 +208,27 @@ public class KafkaYangJsonSchemaSerializerTest {
   }
 
   @Test
+  public void invalidRecordDoesNotPreventFollowingValidRecord() {
+    test3();
+    test1();
+  }
+
+  @Test
+  public void missingSchemaHeaderReturnsNull() {
+    java.io.PrintStream previousErrorStream = System.err;
+    java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+    try (java.io.PrintStream errorStream = new java.io.PrintStream(output)) {
+      System.setErr(errorStream);
+      assertNull(deserializer.deserialize(topic, new RecordHeaders(), new byte[] {1}));
+    } finally {
+      System.setErr(previousErrorStream);
+    }
+    String diagnostic = output.toString(java.nio.charset.StandardCharsets.UTF_8);
+    assertTrue(diagnostic.contains("YANG_DESERIALIZATION_FAILED topic=test schema-id=-1"));
+    assertTrue(diagnostic.contains("schema-id header missing or empty"));
+  }
+
+  @Test
   public void test1() {
     byte[] bytes;
     YangDataDocument doc =
@@ -272,9 +293,7 @@ public class KafkaYangJsonSchemaSerializerTest {
         Assertions.assertDoesNotThrow(
             () -> noValidationSerializer.serialize(topic, serializerHeaders, doc));
     deserializerHeaders = getDeserializationKafkaHeader(serializerHeaders);
-    assertThrowsExactly(
-        SerializationException.class,
-        () -> deserializer.deserialize(topic, deserializerHeaders, bytes));
+    assertNull(deserializer.deserialize(topic, deserializerHeaders, bytes));
   }
 
   @Test
@@ -332,9 +351,7 @@ public class KafkaYangJsonSchemaSerializerTest {
             () -> noValidationSerializer.serialize(topic, serializerHeaders, doc));
 
     deserializerHeaders = getDeserializationKafkaHeader(serializerHeaders);
-    assertThrowsExactly(
-        SerializationException.class,
-        () -> deserializer.deserialize(topic, deserializerHeaders, bytes));
+    assertNull(deserializer.deserialize(topic, deserializerHeaders, bytes));
   }
 
   @Test
