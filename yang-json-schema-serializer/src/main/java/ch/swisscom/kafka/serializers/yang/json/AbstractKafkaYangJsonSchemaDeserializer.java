@@ -43,7 +43,6 @@ import java.util.Objects;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.header.Headers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,9 +135,10 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       boolean includeSchemaAndVersion, String topic, Boolean isKey, Headers headers, byte[] payload)
       throws SerializationException, InvalidConfigurationException {
     if (schemaRegistry == null) {
-      throw new InvalidConfigurationException(
+      log.error(
           "SchemaRegistryClient not found. You need to configure the deserializer "
               + "or use deserializer constructor with SchemaRegistryClient.");
+      return null;
     }
     if (payload == null) {
       return null;
@@ -150,18 +150,21 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     // Differentiate by length: exactly 4 bytes = binary, otherwise = UTF-8 string.
     int id = -1;
     try {
-      if (headers == null) {
-        throw new SerializationException("Kafka headers are required to read schema-id");
-      }
-      var header = headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY);
-      if (header == null || header.value() == null) {
-        throw new SerializationException("schema-id header missing or empty");
-      }
-      byte[] serializedSchemaId = header.value();
-      if (serializedSchemaId.length == 4) {
-        id = ByteBuffer.wrap(serializedSchemaId).getInt();
-      } else {
-        id = Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
+      try {
+        if (headers == null) {
+          throw new SerializationException("Kafka headers are required to read schema-id");
+        }
+        var header = headers.lastHeader(AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY);
+        if (header == null || header.value() == null) {
+          throw new SerializationException("schema-id header missing or empty");
+        }
+        byte[] serializedSchemaId = header.value();
+        id = parseSchemaIdFromHeader(serializedSchemaId);
+      } finally {
+        log.info(
+            "Deserializing payload: [schema-id={}] {}",
+            id,
+            new String(payload, StandardCharsets.UTF_8));
       }
       String subject =
           isKey == null || strategyUsesSchema(isKey)
@@ -174,16 +177,50 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
       return deserializeWithSchemaRegistry(
           includeSchemaAndVersion, id, topic, isKey, headers, payload);
     } catch (InterruptedIOException e) {
-      throw new TimeoutException("Error deserializing YANG-JSON message for id " + id, e);
+      logDeserializationFailure(topic, id, e);
+      return null;
     } catch (IOException | RuntimeException e) {
-      throw new SerializationException("Error deserializing YANG-JSON message for id " + id, e);
+      logDeserializationFailure(topic, id, e);
+      return null;
     } catch (RestClientException e) {
-      throw toKafkaException(e, "Error retrieving YANG schema for id " + id);
+      logDeserializationFailure(topic, id, e);
+      return null;
     } catch (Exception e) {
-      throw new SerializationException("Error deserializing YANG-JSON message for id " + id, e);
+      logDeserializationFailure(topic, id, e);
+      return null;
     } finally {
       postOp(payload);
     }
+  }
+
+  private static void logDeserializationFailure(String topic, int schemaId, Exception failure) {
+    Throwable cause = failure;
+    while (cause.getCause() != null && cause.getCause() != cause) {
+      cause = cause.getCause();
+    }
+    log.error(
+        "YANG_DESERIALIZATION_FAILED topic={} schema-id={} cause={}",
+        topic,
+        schemaId,
+        cause.toString(),
+        failure);
+  }
+
+  static int parseSchemaIdFromHeader(byte[] serializedSchemaId) {
+    boolean isUtf8Decimal = serializedSchemaId.length > 0;
+    for (byte value : serializedSchemaId) {
+      if (value < '0' || value > '9') {
+        isUtf8Decimal = false;
+        break;
+      }
+    }
+    if (isUtf8Decimal) {
+      return Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
+    }
+    if (serializedSchemaId.length == Integer.BYTES) {
+      return ByteBuffer.wrap(serializedSchemaId).getInt();
+    }
+    return Integer.parseInt(new String(serializedSchemaId, StandardCharsets.UTF_8));
   }
 
   /**
@@ -222,6 +259,7 @@ public abstract class AbstractKafkaYangJsonSchemaDeserializer<T> extends Abstrac
     ValidatorResultBuilder resultBuilder = new ValidatorResultBuilder();
     YangDataDocumentJsonParser parser = new YangDataDocumentJsonParser(ctx);
     YangDataDocument doc = parser.parse(jsonNode, resultBuilder);
+    YangSchema.configureFilteredPushValidation(doc, jsonNode);
 
     if (validate && doc != null) {
       // update() resolves leafrefs + defaults before validation.

@@ -2,6 +2,7 @@ package ch.swisscom.kafka.serializers.yang.json;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -16,6 +17,7 @@ import io.confluent.kafka.schemaregistry.client.rest.entities.SubjectVersion;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -99,6 +101,34 @@ public class KafkaYangJsonSchemaMetadataDeserializerTest {
         AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY,
         ByteBuffer.allocate(ID_SIZE).putInt(schemaId).array());
     return deserializerHeaders;
+  }
+
+  @Test
+  public void parseSchemaIdFromHeader_fourDigitUtf8Value_isNotDecodedAsBinary() {
+    byte[] utf8SchemaId = "1555".getBytes(StandardCharsets.UTF_8);
+    byte[] binarySchemaId = ByteBuffer.allocate(ID_SIZE).putInt(1555).array();
+
+    assertEquals(
+        1555, AbstractKafkaYangJsonSchemaDeserializer.parseSchemaIdFromHeader(utf8SchemaId));
+    assertEquals(
+        1555, AbstractKafkaYangJsonSchemaDeserializer.parseSchemaIdFromHeader(binarySchemaId));
+  }
+
+  @Test
+  public void deserialize_invalidPayloadReturnsNullWithSupportedAndMissingSchemaIdHeaders() {
+    byte[] payload = "{}".getBytes(StandardCharsets.UTF_8);
+    Headers decimalHeaders = new RecordHeaders();
+    decimalHeaders.add(
+        AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY,
+        "1555".getBytes(StandardCharsets.UTF_8));
+    Headers binaryHeaders = new RecordHeaders();
+    binaryHeaders.add(
+        AbstractKafkaYangJsonSchemaSerializer.SCHEMA_ID_KEY,
+        ByteBuffer.allocate(ID_SIZE).putInt(1555).array());
+
+    assertNull(metadataDeserializer.deserialize(topic, decimalHeaders, payload));
+    assertNull(metadataDeserializer.deserialize(topic, binaryHeaders, payload));
+    assertNull(metadataDeserializer.deserialize(topic, new RecordHeaders(), payload));
   }
 
   @Test
